@@ -1,0 +1,312 @@
+{
+  "version": 1,
+  "settings": {
+    "title": "My Library",
+    "owner": "",
+    "numberSections": true,
+    "macros": "\\newcommand{\\E}{\\mathbb{E}}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newcommand{\\KL}{D_{\\mathrm{KL}}}\n\\newcommand{\\norm}[1]{\\left\\lVert #1 \\right\\rVert}\n\\DeclareMathOperator*{\\argmax}{arg\\,max}\n\\DeclareMathOperator*{\\argmin}{arg\\,min}",
+    "notesTemplate": "\\section{Problem}\n\n\\section{Method}\n\n\\section{Results}\n\n\\section{Strengths \\& weaknesses}\n\\begin{itemize}\n  \\item[+] \n  \\item[--] \n\\end{itemize}\n\n\\section{Ideas \\& open questions}\n",
+    "github": {
+      "owner": "",
+      "repo": "",
+      "branch": "main",
+      "path": "data/library.json"
+    }
+  },
+  "topics": [
+    {
+      "id": "reinforcement-learning",
+      "name": "Reinforcement Learning",
+      "description": "Policy optimisation, value methods & exploration",
+      "color": "#5b8def"
+    },
+    {
+      "id": "rlhf",
+      "name": "RLHF & Alignment",
+      "description": "Learning from human preferences",
+      "color": "#e86a8a"
+    },
+    {
+      "id": "diffusion-models",
+      "name": "Diffusion Models",
+      "description": "Score-based & denoising generative models",
+      "color": "#2bb3a3"
+    },
+    {
+      "id": "llms",
+      "name": "Large Language Models",
+      "description": "Architectures, scaling & pre-training",
+      "color": "#9b7bf0"
+    }
+  ],
+  "papers": [
+    {
+      "id": "ppo",
+      "title": "Proximal Policy Optimization Algorithms",
+      "authors": [
+        "John Schulman",
+        "Filip Wolski",
+        "Prafulla Dhariwal",
+        "Alec Radford",
+        "Oleg Klimov"
+      ],
+      "year": 2017,
+      "venue": "arXiv",
+      "topics": [
+        "reinforcement-learning"
+      ],
+      "tags": [
+        "policy-gradient",
+        "on-policy",
+        "trust-region"
+      ],
+      "status": "read",
+      "rating": 4,
+      "favorite": false,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/1707.06347",
+        "pdf": "https://arxiv.org/pdf/1707.06347"
+      },
+      "abstract": "",
+      "tldr": "Get most of TRPO's stability with a first-order method: clip the probability ratio $r_t(\\theta)$ so one update cannot move the policy too far.",
+      "summary": "Policy-gradient methods are unstable when we take several gradient steps on the same batch: the policy can drift far from the one that collected the data. \\textbf{TRPO} fixes this with a KL trust-region constraint, but needs second-order machinery (conjugate gradient, line search).\n\nPPO replaces the constraint by a \\emph{clipped surrogate objective}. With the probability ratio $r_t(\\theta) = \\pi_\\theta(a_t\\mid s_t)/\\pi_{\\theta_{\\text{old}}}(a_t\\mid s_t)$ and an advantage estimate $\\hat A_t$,\n\\[\n  L^{\\text{CLIP}}(\\theta) = \\hat{\\E}_t\\!\\left[\\min\\!\\big(r_t(\\theta)\\hat A_t,\\ \\operatorname{clip}(r_t(\\theta), 1-\\epsilon, 1+\\epsilon)\\,\\hat A_t\\big)\\right].\n\\]\nTaking the minimum makes the objective a \\emph{pessimistic} bound on the unclipped one, so there is no incentive to push $r_t$ outside $[1-\\epsilon, 1+\\epsilon]$. This allows $K$ epochs of minibatch SGD per batch of data. On MuJoCo and Atari it matches or beats TRPO and A2C while being a few lines of code.",
+      "notes": "\\section{Setup}\nActor--critic with shared or separate networks. The full objective maximised is\n\\begin{equation}\\label{eq:ppo-total}\n  L_t^{\\text{CLIP}+\\text{VF}+S}(\\theta) = \\hat{\\E}_t\\left[L_t^{\\text{CLIP}}(\\theta) - c_1 L_t^{\\text{VF}}(\\theta) + c_2\\, S[\\pi_\\theta](s_t)\\right],\n\\end{equation}\nwhere $L^{\\text{VF}}_t = (V_\\theta(s_t) - V_t^{\\text{targ}})^2$ and $S$ is an entropy bonus.\n\nAdvantages use GAE \\cite{schulman2016gae}:\n\\begin{align}\n  \\delta_t &= r_t + \\gamma V(s_{t+1}) - V(s_t), \\\\\n  \\hat A_t &= \\sum_{l=0}^{T-t-1} (\\gamma\\lambda)^l\\, \\delta_{t+l}.\n\\end{align}\n\n\\section{Algorithm}\n\\begin{algorithm}\n\\caption{PPO, actor--critic style}\n\\begin{algorithmic}\n\\For{iteration $= 1, 2, \\dots$}\n  \\For{actor $= 1, \\dots, N$}\n    \\State Run $\\pi_{\\theta_{\\text{old}}}$ for $T$ timesteps\n    \\State Compute advantages $\\hat A_1, \\dots, \\hat A_T$ \\Comment{GAE}\n  \\EndFor\n  \\State Optimise \\eqref{eq:ppo-total} w.r.t.\\ $\\theta$ with $K$ epochs and minibatch size $M \\le NT$\n  \\State $\\theta_{\\text{old}} \\gets \\theta$\n\\EndFor\n\\end{algorithmic}\n\\end{algorithm}\n\n\\section{Why the clip works}\n\\begin{itemize}\n  \\item If $\\hat A_t > 0$ the objective stops increasing once $r_t > 1+\\epsilon$: no reward for making a good action \\emph{too} much more likely.\n  \\item If $\\hat A_t < 0$ it stops once $r_t < 1-\\epsilon$.\n  \\item The clip only ever \\emph{removes} incentives, so $L^{\\text{CLIP}} \\le L^{\\text{CPI}}$ --- a lower bound in the spirit of conservative policy iteration.\n\\end{itemize}\nThey also try an adaptive KL penalty $\\beta\\,\\KL[\\pi_{\\theta_{\\text{old}}}, \\pi_\\theta]$; it does worse than clipping in their experiments.\n\n\\section{Practical notes}\n\\begin{description}\n  \\item[$\\epsilon$] $0.2$ worked best on MuJoCo.\n  \\item[Implementation details] Results depend heavily on details such as advantage normalisation, value clipping, learning-rate annealing and observation normalisation\\footnote{See \\emph{Implementation Matters in Deep Policy Gradients} (Engstrom et al., 2020).}.\n\\end{description}\n\n\\begin{remark}\nPPO is the optimiser behind classic RLHF (InstructGPT): the ``environment'' is a reward model, and a per-token KL penalty to the SFT policy is added to the reward.\n\\end{remark}",
+      "bibtex": "",
+      "added": "2026-08-28",
+      "started": "2026-09-03",
+      "finished": "2026-09-12",
+      "updated": "2026-09-12T18:20:00.000Z"
+    },
+    {
+      "id": "dpo",
+      "title": "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
+      "authors": [
+        "Rafael Rafailov",
+        "Archit Sharma",
+        "Eric Mitchell",
+        "Stefano Ermon",
+        "Christopher D. Manning",
+        "Chelsea Finn"
+      ],
+      "year": 2023,
+      "venue": "NeurIPS 2023",
+      "topics": [
+        "rlhf"
+      ],
+      "tags": [
+        "preference-learning",
+        "reward-modeling",
+        "theory"
+      ],
+      "status": "read",
+      "rating": 5,
+      "favorite": true,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/2305.18290",
+        "pdf": "https://arxiv.org/pdf/2305.18290"
+      },
+      "abstract": "",
+      "tldr": "The KL-regularised RLHF optimum is available in closed form, so preference learning becomes a logistic loss on $\\log\\frac{\\pi_\\theta}{\\pi_{\\text{ref}}}$ differences --- no reward model, no RL.",
+      "summary": "RLHF fits a reward model to preference data and then optimises a KL-regularised objective with RL (PPO) --- complex, unstable and expensive. DPO observes that the optimal policy of the KL-regularised problem has a closed form, so the reward can be \\emph{re-parameterised through the policy}. Plugging this into the Bradley--Terry likelihood gives a simple classification loss on preference pairs: no reward model, no sampling during training, no RL.\n\\[\n\\mathcal{L}_{\\text{DPO}}(\\pi_\\theta; \\pi_{\\text{ref}}) = -\\E_{(x, y_w, y_l)\\sim\\mathcal{D}}\\left[\\log \\sigma\\!\\left(\\beta \\log\\frac{\\pi_\\theta(y_w\\mid x)}{\\pi_{\\text{ref}}(y_w\\mid x)} - \\beta \\log\\frac{\\pi_\\theta(y_l\\mid x)}{\\pi_{\\text{ref}}(y_l\\mid x)}\\right)\\right]\n\\]\nIt matches or beats PPO-based RLHF on controlled sentiment generation, summarisation (Reddit TL;DR) and single-turn dialogue (Anthropic HH), while being far more stable and cheaper to tune.",
+      "notes": "\\section{Derivation}\nThe RLHF objective, for a reward $r$ and a reference policy $\\pi_{\\text{ref}}$:\n\\begin{equation}\\label{eq:rlhf}\n  \\max_{\\pi}\\ \\E_{x\\sim\\mathcal{D},\\, y\\sim\\pi(\\cdot\\mid x)}\\big[r(x,y)\\big] - \\beta\\, \\KL\\big[\\pi(\\cdot\\mid x)\\,\\|\\,\\pi_{\\text{ref}}(\\cdot\\mid x)\\big].\n\\end{equation}\n\n\\begin{proposition}[Closed-form optimum]\\label{prop:opt}\nThe maximiser of \\eqref{eq:rlhf} is\n\\[\n  \\pi_r(y\\mid x) = \\frac{1}{Z(x)}\\,\\pi_{\\text{ref}}(y\\mid x)\\exp\\!\\Big(\\tfrac{1}{\\beta} r(x,y)\\Big),\n  \\qquad Z(x) = \\sum_y \\pi_{\\text{ref}}(y\\mid x)\\exp\\!\\Big(\\tfrac{1}{\\beta} r(x,y)\\Big).\n\\]\n\\end{proposition}\n\\begin{proof}\nRewrite the objective as $-\\beta\\,\\KL[\\pi \\,\\|\\, \\pi_r] + \\beta\\log Z(x)$; the KL term is minimised (to $0$) at $\\pi = \\pi_r$.\n\\end{proof}\n\nInverting Proposition~\\ref{prop:opt} expresses the reward through its optimal policy:\n\\begin{equation}\\label{eq:reparam}\n  r(x,y) = \\beta \\log\\frac{\\pi_r(y\\mid x)}{\\pi_{\\text{ref}}(y\\mid x)} + \\beta\\log Z(x).\n\\end{equation}\nUnder Bradley--Terry, $p(y_w \\succ y_l\\mid x) = \\sigma\\big(r(x,y_w) - r(x,y_l)\\big)$, so the intractable $Z(x)$ \\textbf{cancels} in the difference. Maximum likelihood over the policy gives the DPO loss.\n\n\\section{Gradient intuition}\nWith the implicit reward $\\hat r_\\theta(x,y) = \\beta\\log\\frac{\\pi_\\theta(y\\mid x)}{\\pi_{\\text{ref}}(y\\mid x)}$:\n\\begin{align*}\n\\nabla_\\theta \\mathcal{L}_{\\text{DPO}} = -\\beta\\,\\E\\Big[&\\underbrace{\\sigma\\big(\\hat r_\\theta(x,y_l) - \\hat r_\\theta(x,y_w)\\big)}_{\\text{high when the implicit RM is wrong}} \\\\\n&\\cdot\\big(\\nabla_\\theta\\log\\pi_\\theta(y_w\\mid x) - \\nabla_\\theta\\log\\pi_\\theta(y_l\\mid x)\\big)\\Big].\n\\end{align*}\nPairs the implicit reward model already ranks correctly get little weight. The paper shows the unweighted version makes the model degenerate.\n\n\\section{Takeaways}\n\\begin{itemize}\n  \\item ``Your language model is secretly a reward model'': any policy defines a reward via \\eqref{eq:reparam}, unique up to a function of $x$.\n  \\item $\\beta$ plays the role of the KL coefficient in PPO-based RLHF.\n  \\item Purely offline: it only sees the fixed preference dataset, so it cannot explore or correct for distribution shift.\n\\end{itemize}\n\n\\begin{idea}\nCompare with IPO, KTO and online / iterative DPO. Does the offline nature hurt more on reasoning tasks?\n\\end{idea}",
+      "bibtex": "",
+      "added": "2026-09-22",
+      "started": "2026-09-25",
+      "finished": "2026-10-02",
+      "updated": "2026-10-02T21:05:00.000Z"
+    },
+    {
+      "id": "instructgpt",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        "Long Ouyang",
+        "Jeff Wu",
+        "Xu Jiang",
+        "Diogo Almeida",
+        "Carroll L. Wainwright",
+        "Pamela Mishkin",
+        "Chong Zhang",
+        "Sandhini Agarwal",
+        "Katarina Slama",
+        "Alex Ray",
+        "John Schulman",
+        "Jacob Hilton",
+        "Fraser Kelton",
+        "Luke Miller",
+        "Maddie Simens",
+        "Amanda Askell",
+        "Peter Welinder",
+        "Paul Christiano",
+        "Jan Leike",
+        "Ryan Lowe"
+      ],
+      "year": 2022,
+      "venue": "NeurIPS 2022",
+      "topics": [
+        "rlhf"
+      ],
+      "tags": [
+        "preference-learning",
+        "ppo"
+      ],
+      "status": "to-read",
+      "rating": 0,
+      "favorite": false,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/2203.02155",
+        "pdf": "https://arxiv.org/pdf/2203.02155"
+      },
+      "abstract": "",
+      "tldr": "SFT $\\to$ reward model $\\to$ PPO on GPT-3: labelers prefer the 1.3B InstructGPT over the 175B GPT-3.",
+      "summary": "",
+      "notes": "",
+      "bibtex": "",
+      "added": "2026-10-10"
+    },
+    {
+      "id": "ddpm",
+      "title": "Denoising Diffusion Probabilistic Models",
+      "authors": [
+        "Jonathan Ho",
+        "Ajay Jain",
+        "Pieter Abbeel"
+      ],
+      "year": 2020,
+      "venue": "NeurIPS 2020",
+      "topics": [
+        "diffusion-models"
+      ],
+      "tags": [
+        "generative",
+        "score-matching"
+      ],
+      "status": "reading",
+      "rating": 0,
+      "favorite": false,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/2006.11239",
+        "pdf": "https://arxiv.org/pdf/2006.11239",
+        "code": "https://github.com/hojonathanho/diffusion"
+      },
+      "abstract": "",
+      "tldr": "Learn to reverse a fixed Gaussian noising chain by predicting the noise: $\\|\\epsilon - \\epsilon_\\theta(x_t, t)\\|^2$ is all you train on.",
+      "summary": "A diffusion model is a latent-variable model trained to invert a fixed Markov chain that gradually adds Gaussian noise to data. With a particular parameterisation --- predicting the \\emph{noise} $\\epsilon$ rather than the posterior mean --- the variational bound reduces to a simple denoising objective, which connects diffusion models to denoising score matching and annealed Langevin dynamics. The resulting samples are of very high quality (FID $3.17$ on unconditional CIFAR-10).",
+      "notes": "\\section{Forward process}\nFixed variance schedule $\\beta_1,\\dots,\\beta_T$ (linear from $10^{-4}$ to $0.02$, with $T = 1000$):\n\\[\n  q(x_t \\mid x_{t-1}) = \\mathcal{N}\\big(x_t;\\ \\sqrt{1-\\beta_t}\\,x_{t-1},\\ \\beta_t I\\big).\n\\]\nWith $\\alpha_t = 1-\\beta_t$ and $\\bar\\alpha_t = \\prod_{s\\le t}\\alpha_s$ we can jump to any step in closed form:\n\\begin{equation}\\label{eq:marginal}\n  q(x_t\\mid x_0) = \\mathcal{N}\\big(x_t;\\ \\sqrt{\\bar\\alpha_t}\\,x_0,\\ (1-\\bar\\alpha_t) I\\big)\n  \\iff x_t = \\sqrt{\\bar\\alpha_t}\\,x_0 + \\sqrt{1-\\bar\\alpha_t}\\,\\epsilon,\\quad \\epsilon\\sim\\mathcal{N}(0,I).\n\\end{equation}\n\n\\section{Reverse process \\& objective}\nLearn $p_\\theta(x_{t-1}\\mid x_t) = \\mathcal{N}(x_{t-1}; \\mu_\\theta(x_t,t), \\sigma_t^2 I)$ with\n\\[\n  \\mu_\\theta(x_t,t) = \\frac{1}{\\sqrt{\\alpha_t}}\\left(x_t - \\frac{\\beta_t}{\\sqrt{1-\\bar\\alpha_t}}\\,\\epsilon_\\theta(x_t,t)\\right).\n\\]\nEach ELBO term becomes a weighted noise-prediction error. Dropping the weights gives\n\\begin{equation}\\label{eq:simple}\n  L_{\\text{simple}}(\\theta) = \\E_{t, x_0, \\epsilon}\\Big[\\norm{\\epsilon - \\epsilon_\\theta\\big(\\sqrt{\\bar\\alpha_t}x_0 + \\sqrt{1-\\bar\\alpha_t}\\,\\epsilon,\\ t\\big)}^2\\Big],\n\\end{equation}\nwhich uses \\eqref{eq:marginal} to sample $x_t$ directly --- no need to simulate the chain.\n\n\\section{Sampling}\n\\begin{algorithmic}\n\\State $x_T \\sim \\mathcal{N}(0, I)$\n\\For{$t = T, \\dots, 1$}\n  \\State $z \\sim \\mathcal{N}(0, I)$ if $t > 1$, else $z = 0$\n  \\State $x_{t-1} = \\frac{1}{\\sqrt{\\alpha_t}}\\Big(x_t - \\frac{1-\\alpha_t}{\\sqrt{1-\\bar\\alpha_t}}\\,\\epsilon_\\theta(x_t, t)\\Big) + \\sigma_t z$\n\\EndFor\n\\State \\Return $x_0$\n\\end{algorithmic}\n\n\\section{Open questions}\n\\todo{Write out the link to score matching: $\\epsilon_\\theta(x_t,t) \\approx -\\sqrt{1-\\bar\\alpha_t}\\,\\nabla_{x_t}\\log q(x_t)$.}\n\nSampling needs $T = 1000$ network evaluations; DDIM gives a deterministic, few-step sampler for the same trained model.",
+      "bibtex": "",
+      "added": "2026-10-12",
+      "started": "2026-10-14",
+      "updated": "2026-10-17T16:40:00.000Z"
+    },
+    {
+      "id": "score-sde",
+      "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+      "authors": [
+        "Yang Song",
+        "Jascha Sohl-Dickstein",
+        "Diederik P. Kingma",
+        "Abhishek Kumar",
+        "Stefano Ermon",
+        "Ben Poole"
+      ],
+      "year": 2021,
+      "venue": "ICLR 2021",
+      "topics": [
+        "diffusion-models"
+      ],
+      "tags": [
+        "generative",
+        "score-matching",
+        "sde"
+      ],
+      "status": "to-read",
+      "rating": 0,
+      "favorite": false,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/2011.13456",
+        "pdf": "https://arxiv.org/pdf/2011.13456"
+      },
+      "abstract": "",
+      "tldr": "Diffusion and score matching as SDEs: sample by solving the reverse-time SDE, or a probability-flow ODE that gives exact likelihoods.",
+      "summary": "",
+      "notes": "",
+      "bibtex": "",
+      "added": "2026-10-15"
+    },
+    {
+      "id": "transformer",
+      "title": "Attention Is All You Need",
+      "authors": [
+        "Ashish Vaswani",
+        "Noam Shazeer",
+        "Niki Parmar",
+        "Jakob Uszkoreit",
+        "Llion Jones",
+        "Aidan N. Gomez",
+        "Łukasz Kaiser",
+        "Illia Polosukhin"
+      ],
+      "year": 2017,
+      "venue": "NeurIPS 2017",
+      "topics": [
+        "llms"
+      ],
+      "tags": [
+        "transformers",
+        "architecture"
+      ],
+      "status": "read",
+      "rating": 5,
+      "favorite": true,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/1706.03762",
+        "pdf": "https://arxiv.org/pdf/1706.03762"
+      },
+      "abstract": "",
+      "tldr": "Replace recurrence with multi-head self-attention: fully parallel training and better translation quality.",
+      "summary": "The Transformer drops recurrence and convolutions and models sequences with \\emph{attention only}. Each layer combines multi-head self-attention with a position-wise feed-forward network, residual connections and layer normalisation; word order enters through sinusoidal positional encodings. Because all positions are processed in parallel, training is much faster than for recurrent seq2seq models, and it set a new state of the art on WMT'14 English--German (28.4 BLEU) and English--French translation.",
+      "notes": "\\section{Scaled dot-product attention}\n\\begin{equation}\\label{eq:attn}\n  \\operatorname{Attention}(Q, K, V) = \\operatorname{softmax}\\!\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\\right) V\n\\end{equation}\nThe $1/\\sqrt{d_k}$ keeps the logits at unit scale: if $q, k$ have i.i.d.\\ unit-variance entries, $q^\\top k$ has variance $d_k$, which would saturate the softmax.\n\n\\section{Multi-head attention}\n$h$ heads attend in parallel in lower-dimensional subspaces:\n\\[\n  \\operatorname{MultiHead}(Q,K,V) = \\operatorname{Concat}(\\text{head}_1,\\dots,\\text{head}_h)\\,W^O,\\qquad\n  \\text{head}_i = \\operatorname{Attention}(QW_i^Q, KW_i^K, VW_i^V).\n\\]\n\n\\section{Architecture}\n\\begin{table}\n\\centering\n\\caption{Base and big configurations.}\n\\begin{tabular}{lccccc}\n\\toprule\nModel & $N$ & $d_{\\text{model}}$ & $d_{\\text{ff}}$ & $h$ & Params \\\\\n\\midrule\nBase & 6 & 512 & 2048 & 8 & 65M \\\\\nBig & 6 & 1024 & 4096 & 16 & 213M \\\\\n\\bottomrule\n\\end{tabular}\n\\end{table}\n\n\\begin{itemize}\n  \\item Encoder and decoder stacks of $N = 6$ layers; decoder self-attention is \\textbf{masked} to stay autoregressive.\n  \\item Sinusoidal encodings $PE_{(pos, 2i)} = \\sin\\big(pos / 10000^{2i/d_{\\text{model}}}\\big)$ make relative positions easy to attend to.\n  \\item Learning-rate warm-up followed by inverse-square-root decay; label smoothing $\\epsilon_{ls} = 0.1$.\n\\end{itemize}\n\n\\section{Complexity}\nSelf-attention costs $\\mathcal{O}(n^2 d)$ per layer with $\\mathcal{O}(1)$ sequential operations and maximum path length, versus $\\mathcal{O}(n d^2)$ and $\\mathcal{O}(n)$ for recurrence --- the source of both its parallelism and its quadratic-context problem (see Eq.~\\eqref{eq:attn}).",
+      "bibtex": "",
+      "added": "2026-06-30",
+      "started": "2026-07-02",
+      "finished": "2026-07-06",
+      "updated": "2026-07-06T10:00:00.000Z"
+    },
+    {
+      "id": "scaling-laws",
+      "title": "Scaling Laws for Neural Language Models",
+      "authors": [
+        "Jared Kaplan",
+        "Sam McCandlish",
+        "Tom Henighan",
+        "Tom B. Brown",
+        "Benjamin Chess",
+        "Rewon Child",
+        "Scott Gray",
+        "Alec Radford",
+        "Jeffrey Wu",
+        "Dario Amodei"
+      ],
+      "year": 2020,
+      "venue": "arXiv",
+      "topics": [
+        "llms"
+      ],
+      "tags": [
+        "scaling"
+      ],
+      "status": "to-read",
+      "rating": 0,
+      "favorite": false,
+      "links": {
+        "arxiv": "https://arxiv.org/abs/2001.08361",
+        "pdf": "https://arxiv.org/pdf/2001.08361"
+      },
+      "abstract": "",
+      "tldr": "Language-model loss follows smooth power laws in parameters, data and compute across many orders of magnitude.",
+      "summary": "",
+      "notes": "",
+      "bibtex": "",
+      "added": "2026-07-21"
+    }
+  ]
+}
