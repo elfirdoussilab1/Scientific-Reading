@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run your paper library locally.
 
-    python3 serve.py            # http://localhost:8642, opens your browser
+    python3 serve.py            # http://localhost:8642, opens it in Google Chrome
     python3 serve.py --port 9000 --no-browser
     python3 serve.py --idle-exit 900   # stop after 15 min without the page open
 
@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -124,6 +125,20 @@ class Handler(SimpleHTTPRequestHandler):
             sys.stderr.write(f"[{time.strftime('%H:%M:%S')}] {fmt % args}\n")
 
 
+def open_in_chrome(url):
+    """Open url in a Google Chrome tab, or in the default browser without Chrome."""
+    if sys.platform == "darwin":
+        if subprocess.run(["open", "-a", "Google Chrome", url], capture_output=True).returncode == 0:
+            return
+    else:
+        try:
+            if webbrowser.get("chrome").open(url):
+                return
+        except webbrowser.Error:
+            pass
+    webbrowser.open(url)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8642)
@@ -138,7 +153,7 @@ def main():
     url = f"http://localhost:{args.port}/"
     print(f"📚  Your library is open at {url}\n    Edits are saved to {DATA.relative_to(ROOT)}. Ctrl+C to stop.")
     if not args.no_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.6, lambda: open_in_chrome(url)).start()
     if args.idle_exit > 0:
         def watchdog():
             while True:

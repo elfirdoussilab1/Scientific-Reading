@@ -59,6 +59,7 @@ export function normalize(lib) {
   lib.settings.github = { ...DEFAULT_SETTINGS.github, ...(lib.settings.github || {}) };
   lib.topics = Array.isArray(lib.topics) ? lib.topics : [];
   lib.papers = Array.isArray(lib.papers) ? lib.papers : [];
+  lib.references = Array.isArray(lib.references) ? lib.references : []; // cited papers that are not on the reading list
   for (const p of lib.papers) {
     p.authors = Array.isArray(p.authors) ? p.authors : [];
     p.topics = Array.isArray(p.topics) ? p.topics : [];

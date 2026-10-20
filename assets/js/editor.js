@@ -134,12 +134,42 @@ export function closeCompletions() {
   if (ac.el) ac.el.hidden = true;
 }
 
-/** Call after every input in the textarea. */
-export function updateCompletions(ta, popup, macros) {
+// Papers matching every word typed inside \cite{…}; `cites` is ordered most recent first.
+function citeCandidates(q, cites) {
+  const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!toks.length) return cites.slice(0, 8);
+  return cites
+    .filter((c) => toks.every((t) => c.search.includes(t)))
+    .map((c, i) => [c.key.toLowerCase().startsWith(toks[0]) ? 0 : 1, i, c])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .slice(0, 8)
+    .map(([, , c]) => c);
+}
+
+const CITE_CMD = /\\(?:cite[a-z]*|parencite|textcite|autocite)\*?(?:\[[^\]\n]*\]){0,2}\{([^{}\n]*)$/;
+
+/**
+ * Call after every input in the textarea. `cites()` lists the papers that can be
+ * cited: { key, label, hint, search }. `addCite(query, from, to)`, if given, is
+ * offered as a last suggestion to cite a paper that is not in the list.
+ */
+export function updateCompletions(ta, popup, macros, { cites = () => [], addCite } = {}) {
   ac.el = popup;
   ac.ta = ta;
   const s = ta.selectionStart;
   if (s !== ta.selectionEnd) return closeCompletions();
+  const cite = CITE_CMD.exec(ta.value.slice(Math.max(0, s - 200), s));
+  if (cite) {
+    const frag = /[^,]*$/.exec(cite[1])[0];
+    const q = frag.trimStart();
+    const items = citeCandidates(q, cites()).map((c) => ({ ...c, insert: c.key, kind: 'cite' }));
+    if (items.length === 1 && items[0].key === q) return closeCompletions();
+    if (addCite) {
+      items.push({ kind: 'cite', label: q ? `Cite “${q}”…` : 'Cite a paper not in your library…', hint: 'Look up an arXiv link, DOI, BibTeX entry or title', action: addCite });
+    }
+    if (!items.length) return closeCompletions();
+    return showCompletions(ta, popup, items, s - q.length, false);
+  }
   const before = ta.value.slice(Math.max(0, s - 40), s);
   const env = /\\begin\{([a-zA-Z*]*)$/.exec(before);
   const cmd = !env && /(?:^|[^\\])\\([a-zA-Z]+)$/.exec(before);
@@ -147,13 +177,19 @@ export function updateCompletions(ta, popup, macros) {
   const word = env ? env[1] : cmd[1];
   const items = candidates(word, !!env, macros);
   if (!items.length || (items.length === 1 && items[0].label === `\\${word}`)) return closeCompletions();
+  showCompletions(ta, popup, items, s - (env ? env[0].length : word.length + 1), !!env);
+}
+
+function showCompletions(ta, popup, items, from, env) {
   ac.items = items;
   ac.sel = 0;
-  ac.from = s - (env ? env[0].length : word.length + 1);
-  ac.env = !!env;
+  ac.from = from;
+  ac.env = env;
   ac.open = true;
+  const kind = (c) => (c.kind === 'env' ? 'environment' : c.kind === 'macro' ? esc(c.hint).slice(0, 40) : c.kind === 'cite' ? esc(c.hint) : '');
+  popup.classList.toggle('ac-wide', items[0].kind === 'cite');
   popup.innerHTML = items
-    .map((c, i) => `<div class="ac-item${i === 0 ? ' sel' : ''}" data-ac="${i}"><span class="ac-label">${esc(c.label)}</span><span class="ac-kind">${c.kind === 'env' ? 'environment' : c.kind === 'macro' ? esc(c.hint).slice(0, 40) : ''}</span></div>`)
+    .map((c, i) => `<div class="ac-item${c.kind === 'cite' ? ' ac-cite' : ''}${i === 0 ? ' sel' : ''}" data-ac="${i}"><span class="ac-label">${esc(c.label)}</span><span class="ac-kind">${kind(c)}</span></div>`)
     .join('');
   const { x, y } = caretXY(ta);
   popup.hidden = false;
@@ -167,6 +203,7 @@ function acceptCompletion(i = ac.sel) {
   if (!c || !ac.ta) return;
   const ta = ac.ta;
   closeCompletions();
+  if (c.action) { c.action(ta.value.slice(ac.from, ta.selectionStart), ac.from, ta.selectionStart); return; }
   // `\begin{` usually has an auto-closed `}` after the caret: replace it too.
   const to = ac.env && ta.value[ta.selectionStart] === '}' ? ta.selectionStart + 1 : ta.selectionStart;
   insertAt(ta, ac.from, to, c.insert.includes('$0') ? c.insert : `${c.insert}$0`);

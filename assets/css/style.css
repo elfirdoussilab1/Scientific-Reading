@@ -624,8 +624,14 @@ a.stat:hover { border-color: var(--line-2); }
 .alg-comment { float: right; color: var(--ink-3); font-style: italic; }
 .tex-code { margin: 0.6em 0 1.1em; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--bg-2); border: 1px solid var(--line); overflow-x: auto; font: 12.5px/1.6 var(--mono); }
 .tex-doc .tex-code code { padding: 0; background: none; font-size: inherit; }
-.tex-cite { color: var(--ink-2); white-space: nowrap; }
-.tex-cite-key { font-family: var(--sans); font-size: 0.78em; }
+.tex-cite { color: var(--ink-2); }
+.tex-doc a.tex-cite-link, a.tex-cite-link { color: inherit; text-decoration: none; }
+a.tex-cite-link:hover { color: var(--link); text-decoration: underline; }
+.tex-cite-missing { color: var(--danger); font-family: var(--sans); font-size: 0.85em; }
+.tex-refs { margin-top: 1.6em; padding-top: 0.6em; border-top: 1px solid var(--line); font-size: 0.85em; color: var(--ink-2); }
+.tex-refs-title { margin: 0 0 0.5em; font: 600 0.8em/1.4 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.tex-refs ul { list-style: none; padding: 0; margin: 0; }
+.tex-refs li { margin: 0.35em 0; padding-left: 1.4em; text-indent: -1.4em; }
 .tex-ref { cursor: pointer; text-decoration: none !important; }
 .tex-ref-missing { color: var(--danger); }
 .tex-fn a { cursor: pointer; text-decoration: none !important; font-family: var(--sans); font-size: 0.75em; padding: 0 1px; }
@@ -751,6 +757,13 @@ a.stat:hover { border-color: var(--line-2); }
 .ac-item.sel { background: var(--mark); }
 .ac-label { color: var(--ink); white-space: nowrap; }
 .ac-kind { font: 11px/1.2 var(--sans); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac.ac-wide { width: 360px; }
+.ac-cite { flex-direction: column; align-items: stretch; gap: 3px; }
+.ac-cite .ac-label { font: 500 12.5px/1.3 var(--sans); overflow: hidden; text-overflow: ellipsis; }
+.ac-cite:last-child:not(:first-child) { margin-top: 3px; border-top: 1px solid var(--line); border-radius: 0 0 5px 5px; }
+.ref-found { margin: -4px 0 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-2); border: 1px solid var(--line); font-size: 13.5px; color: var(--ink-2); }
+.ref-found b { display: block; margin-bottom: 3px; color: var(--ink); font: 600 15px/1.35 var(--serif); }
+.ref-found code { font: 11.5px/1 var(--mono); }
 
 /* ---------------------------------------------------------------- notes workspace */
 

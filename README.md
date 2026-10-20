@@ -60,14 +60,14 @@ Because your library isn't in git, back it up now and then. Use **Settings → D
 ./app/install-mac-app.sh     # builds "Scientific Reading.app" into ~/Applications
 ```
 
-Then open **Scientific Reading** from Spotlight or Launchpad, or drag it to the Dock. Clicking it starts the library server in the background (only if it isn't running yet) and opens the library in its own window, without browser tabs. The server stops by itself about 15 minutes after you close the window. Logs go to `~/Library/Logs/ScientificReading.log`.
+Then open **Scientific Reading** from Spotlight or Launchpad, or drag it to the Dock. Clicking it starts the library server in the background (only if it isn't running yet) and opens the library in a Google Chrome tab (or your default browser if Chrome isn't installed). The server stops by itself about 15 minutes after you close the tab. Logs go to `~/Library/Logs/ScientificReading.log`.
 
 The app remembers where this folder lives, so run the script again if you move the repo. The first time, macOS may ask whether the app can access the folder that contains the repo (for example, Desktop). Click **Allow**.
 
 ### From the terminal
 
 ```bash
-python3 serve.py              # opens http://localhost:8642
+python3 serve.py              # opens http://localhost:8642 in Chrome
 python3 serve.py --port 9000  # if 8642 is taken
 ```
 
@@ -101,8 +101,17 @@ Write the body of a document, without a preamble. Supported:
 | Structure | `\section`, `\subsection`, `\subsubsection`, `\paragraph`, `itemize`, `enumerate`, `description`, `\item[…]`, `quote` |
 | Boxes | `theorem`, `lemma`, `proposition`, `corollary`, `definition`, `assumption`, `remark`, `example`, `claim`, `idea`, `intuition`, `question`, `critique`, `proof` (all with an optional `[title]` and `\ref`) |
 | Floats | `table` + `tabular` (booktabs rules, `\multicolumn`), `figure` + `\includegraphics{https://…}`, `algorithm` + `algorithmic` (`\State`, `\If`, `\For`, `\While`, `\Return`, `\Comment`, …), `\caption` |
-| Text | `\textbf`, `\emph`, `\texttt`, `\textsc`, `\underline`, `\textcolor`, `\hl`, `\href`, `\url`, `\cite`/`\citep`/`\citet`, `\footnote`, `\todo`, `verbatim` / `lstlisting`, `\verb`, accents, `--` / `---`, `` ``quotes'' `` |
+| Text | `\textbf`, `\emph`, `\texttt`, `\textsc`, `\underline`, `\textcolor`, `\hl`, `\href`, `\url`, `\footnote`, `\todo`, `verbatim` / `lstlisting`, `\verb`, accents, `--` / `---`, `` ``quotes'' `` |
+| Citations | `\cite`/`\citep`, `\citet`, `\citealp`, `\citeauthor`, `\citeyear` of papers in your library, with `[pre][post]` notes (see below) |
 | Macros | `\newcommand`, `\renewcommand`, `\DeclareMathOperator` in a note, or globally in **Settings → LaTeX macros** (defaults: `\E`, `\R`, `\KL`, `\norm`, `\argmax`, `\argmin`). Macros also show up in autocomplete. |
+
+### Citing other papers
+
+Cite any paper from a summary or notes. Type `\cite{` (or click **[1]** in the toolbar) and pick a paper from the suggestions, which match its title, authors, year or key. The key is the paper's BibTeX key if it has one, otherwise a generated one like `rafailov2023direct`; its id works too.
+
+To cite a paper that is not on your reading list, pick **Cite a paper not in your library…** (the last suggestion). Paste an arXiv link, DOI, BibTeX entry or title, check the match, and click **Cite**. The paper is saved under `references` in `data/library.json`, so you can cite it again from any note, and it is included in **Export all BibTeX**. Tick *Also add it to my reading list* to add it as a *To read* paper instead.
+
+Citations render author-year and link to the cited paper (its page in your library, or arXiv / the DOI for other papers): `\cite{…}` → (Rafailov et al., 2023), `\citet{…}` → Rafailov et al. (2023). A **References** list of the cited papers is added at the end. A key that matches no paper is shown in red.
 
 `%` starts a comment, as in LaTeX. Unknown commands are shown in red instead of breaking the page.
 

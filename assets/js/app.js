@@ -1,12 +1,12 @@
 // Scientific Reading — a personal library of research papers and LaTeX notes.
 
-import { clickCompletion, closeCompletions, editorKeydown, updateCompletions, wrapSelection } from './editor.js';
+import { clickCompletion, closeCompletions, editorKeydown, insertAt, updateCompletions, wrapSelection } from './editor.js';
 import { icon } from './icons.js';
-import { lookup, makeBibtex } from './meta.js';
+import { citeKey, lookup, makeBibtex } from './meta.js';
 import { DEFAULT_SETTINGS, Store, serialize } from './store.js';
 import { parseMacros, renderInline, renderTeX, texPlain } from './tex.js';
 import {
-  authorsList, copyText, debounce, download, esc, fmtDate, lastName, parseDate,
+  authorsList, citeAuthors, copyText, debounce, download, esc, fmtDate, lastName, parseDate,
   slugify, splitAuthors, splitTags, timeAgo, todayISO,
 } from './util.js';
 
@@ -74,7 +74,115 @@ function macros() {
   if (macroCache.src !== S().macros) macroCache = { src: S().macros, macros: parseMacros(S().macros) };
   return macroCache.macros;
 }
-const texOpts = (prefix) => ({ macros: macros(), prefix, numberSections: S().numberSections });
+// Citations: \cite{key} finds a library paper by its BibTeX key, its generated key or its id.
+const bibKey = (p) => /@\w+\s*\{\s*([^,\s]+)\s*,/.exec(p.bibtex || '')?.[1] || citeKey(p);
+let citeMap = null; // reset whenever the library changes
+let citeLib = null;
+function resolveCite(key) {
+  if (!citeMap || citeLib !== lib()) {
+    citeMap = new Map();
+    citeLib = lib();
+    const papers = lib().papers;
+    for (const keyOf of [bibKey, (p) => p.id, citeKey]) for (const p of papers) if (!citeMap.has(keyOf(p))) citeMap.set(keyOf(p), p);
+  }
+  const p = citeMap.get(key);
+  if (p) return { id: p.id, href: href('paper', p.id), title: p.title, authors: p.authors, year: p.year, venue: p.venue };
+  const r = lib().references.find((x) => x.key === key);
+  return r ? { id: `ref:${r.key}`, href: refUrl(r), external: true, title: r.title, authors: r.authors, year: r.year, venue: r.venue } : null;
+}
+const refUrl = (r) => r.links?.arxiv || (r.links?.doi && (/^https?:/.test(r.links.doi) ? r.links.doi : `https://doi.org/${r.links.doi}`)) || r.links?.url || r.links?.pdf || '';
+/** Papers offered by the \cite{ autocomplete, most recently touched first. */
+function citeItems() {
+  return lib().papers
+    .filter((p) => p.id !== ui.draft?.id)
+    .sort((a, b) => (b.updated || b.added || '').localeCompare(a.updated || a.added || ''))
+    .map((p) => {
+      const key = bibKey(p);
+      const title = texPlain(p.title);
+      const who = `${citeAuthors(p.authors)}${p.year ? ` ${p.year}` : ''}`;
+      return { key, label: title, hint: `${who} · ${key}`, search: `${key} ${title} ${(p.authors || []).join(' ')} ${p.year || ''} ${p.id}`.toLowerCase() };
+    })
+    .concat([...lib().references].reverse().map((r) => {
+      const title = texPlain(r.title);
+      const who = `${citeAuthors(r.authors)}${r.year ? ` ${r.year}` : ''}`;
+      return { key: r.key, label: title, hint: `${who} · ${r.key} · not in library`, search: `${r.key} ${title} ${(r.authors || []).join(' ')} ${r.year || ''}`.toLowerCase() };
+    }));
+}
+
+// -- citing a paper that is not in the library
+
+function referenceDialog(query, from, to) {
+  ui.refTarget = { from, to };
+  ui.refFound = null;
+  openDialog(`<form class="dlg" data-form="reference">
+    <h2 class="dlg-title">Cite a paper</h2>
+    <p class="dlg-text">Paste an arXiv link or ID, a DOI, a BibTeX entry or the title. It is saved as a reference you can cite from any note, without going on your reading list.</p>
+    <label class="field"><span>Paper</span><textarea name="q" rows="3" required placeholder="https://arxiv.org/abs/1706.03762">${esc(query)}</textarea></label>
+    <div class="ref-found" id="ref-found" hidden></div>
+    <label class="check"><input type="checkbox" name="toRead"> Also add it to my reading list (To read)</label>
+    <div class="dlg-actions"><span class="grow"></span><button type="button" class="btn ghost" data-action="close-dialog">Cancel</button><button class="btn primary">Find</button></div>
+  </form>`);
+  if (query.trim()) findReference($('form', dialog()));
+}
+
+async function findReference(f) {
+  const q = f.elements.q.value.trim();
+  const btn = f.querySelector('button.primary');
+  const out = $('#ref-found');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  try {
+    const m = await lookup(q);
+    if (!m.title) throw new Error('No paper found');
+    ui.refFound = { q, m };
+    out.innerHTML = `<b>${inl(m.title)}</b>${esc(authorsList(m.authors || []))}${m.venue || m.year ? ` · ${esc(m.venue || String(m.year))}` : ''}`;
+    out.hidden = false;
+    btn.textContent = 'Cite';
+  } catch (e) {
+    ui.refFound = null;
+    out.hidden = true;
+    btn.textContent = 'Find';
+    toast(e.message || 'Lookup failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+/** Saves the paper found by referenceDialog (or reuses a matching one) and cites it. */
+function citeReference(m, toRead) {
+  const same = (x) => texPlain(x.title).toLowerCase() === texPlain(m.title).toLowerCase();
+  const fields = {
+    title: m.title, authors: m.authors || [], year: m.year || '', venue: m.venue || '', abstract: m.abstract || '',
+    links: Object.fromEntries(Object.entries(m.links || {}).filter(([, v]) => v)), bibtex: m.bibtex || '',
+  };
+  let key;
+  const paper = lib().papers.find(same);
+  const ref = !paper && lib().references.find(same);
+  if (paper) key = bibKey(paper);
+  else if (toRead) {
+    const p = { ...newDraft(), ...fields, id: uniqueId(slugify(m.title, 48), new Set(lib().papers.map((x) => x.id))), updated: new Date().toISOString() };
+    if (ref) p.bibtex = ref.bibtex; // keeps its key, so earlier citations still resolve
+    store.update((l) => {
+      l.papers.push(p);
+      if (ref) l.references = l.references.filter((x) => x.key !== ref.key);
+    }, `Add "${texPlain(p.title).slice(0, 60)}"`);
+    key = bibKey(p);
+  } else if (ref) key = ref.key;
+  else {
+    const base = /@\w+\s*\{\s*([^,\s]+)\s*,/.exec(fields.bibtex)?.[1] || citeKey(fields);
+    const taken = new Set([...lib().papers.flatMap((p) => [p.id, bibKey(p), citeKey(p)]), ...lib().references.map((r) => r.key)]);
+    key = base;
+    for (let i = 2; taken.has(key); i++) key = `${base}${i}`;
+    const bibtex = (fields.bibtex || makeBibtex(fields)).replace(/(@\w+\s*\{\s*)[^,\s]+/, `$1${key}`);
+    store.update((l) => l.references.push({ key, ...fields, bibtex, added: todayISO() }), `Add reference "${texPlain(m.title).slice(0, 60)}"`);
+  }
+  closeDialog();
+  const ta = $('#writer-input');
+  if (ta && ui.refTarget) insertAt(ta, ui.refTarget.from, ui.refTarget.to, `${key}$0`);
+  toast(paper ? 'Already in your library: cited it' : toRead ? 'Added to your reading list and cited' : 'Cited', 'ok');
+}
+const texOpts = (prefix) => ({ macros: macros(), prefix, numberSections: S().numberSections, cite: resolveCite });
 const inl = (s) => renderInline(s, texOpts('i-'));
 
 function uniqueId(base, taken) {
@@ -607,6 +715,7 @@ function writerPlaceholder(tab) {
 }
 
 function writerHTML(tabs) {
+  ui.writerTabs = tabs;
   const d = ui.draft;
   const tab = ui.writerTab;
   const lay = (v, ic, t) => `<button class="seg-btn${ui.writerLayout === v ? ' on' : ''}" data-action="writer-layout" data-v="${v}" title="${t}">${icon(ic)}</button>`;
@@ -1176,7 +1285,10 @@ const actions = {
   snip: (el) => { const ta = $('#writer-input'); if (ta) wrapSelection(ta, ...SNIPPETS[el.dataset.snip]); },
   'writer-tab': (el) => {
     ui.writerTab = el.dataset.tab;
-    renderView({ keepScroll: true });
+    // Redraw only the writer: re-rendering the view would reload the PDF and lose its scroll position.
+    $('.writer').outerHTML = writerHTML(ui.writerTabs);
+    renderPreview();
+    renderSaveState();
     $('#writer-input')?.focus({ preventScroll: true });
   },
   'writer-layout': (el) => {
@@ -1211,7 +1323,7 @@ const actions = {
   // settings
   'gh-disconnect': () => { store.disconnectGithub(); closeDialog(); toast('GitHub disconnected'); onRoute(); },
   'export-json': () => download(`library-${todayISO()}.json`, serialize(lib())),
-  'export-bib': () => download(`library-${todayISO()}.bib`, lib().papers.map((p) => p.bibtex || makeBibtex(p)).join('\n\n'), 'application/x-bibtex'),
+  'export-bib': () => download(`library-${todayISO()}.bib`, [...lib().papers.map((p) => p.bibtex || makeBibtex(p)), ...lib().references.map((r) => r.bibtex)].join('\n\n'), 'application/x-bibtex'),
 };
 
 function startPdfDrag(e) {
@@ -1296,11 +1408,13 @@ function bindEvents() {
       setDraftField(t.dataset.field, t.value);
       if (t.dataset.field === 'title') autosizeTitle();
       draftChanged();
+    } else if (t.name === 'q' && t.form?.dataset.form === 'reference') {
+      t.form.querySelector('button.primary').textContent = 'Find';
     } else if (t.id === 'writer-input') {
       ui.draft[t.dataset.text] = t.value;
       draftChanged();
       renderPreviewSoon();
-      if (t.dataset.text !== 'bibtex') updateCompletions(t, $('#ac'), macros());
+      if (t.dataset.text !== 'bibtex') updateCompletions(t, $('#ac'), macros(), { cites: citeItems, addCite: referenceDialog });
     }
   });
 
@@ -1325,7 +1439,10 @@ function bindEvents() {
     if (!kind) return;
     e.preventDefault();
     const data = Object.fromEntries(new FormData(f));
-    if (kind === 'topic') {
+    if (kind === 'reference') {
+      if (ui.refFound?.q === data.q.trim()) citeReference(ui.refFound.m, !!data.toRead);
+      else await findReference(f);
+    } else if (kind === 'topic') {
       const name = data.name.trim();
       if (!name) return;
       if (f.dataset.id) {
@@ -1380,6 +1497,7 @@ function bindEvents() {
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
     if (mod && e.key.toLowerCase() === 's' && ui.draft) { e.preventDefault(); saveDraftNow(); toast('Saved', 'ok'); return; }
     if (e.target.id === 'import-input' && e.key === 'Enter') { e.preventDefault(); fetchMeta(); return; }
+    if (e.target.matches('[data-form="reference"] textarea') && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.target.form.requestSubmit(); return; }
     const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
     if (typing || mod || e.altKey || dialog().open || $('#palette').open) return;
     const r = ui.route;
@@ -1411,6 +1529,7 @@ async function main() {
   }
   store.onStatus(renderSync);
   store.on(() => {
+    citeMap = null;
     renderSidebar();
     if (!EDITING.includes(ui.route.name)) renderView({ keepScroll: true });
   });

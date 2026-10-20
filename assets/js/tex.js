@@ -6,7 +6,7 @@
 // translated here. It is deliberately forgiving: unknown commands degrade to
 // their arguments instead of failing.
 
-import { esc, slugify } from './util.js';
+import { citeAuthors, esc, slugify } from './util.js';
 
 const MATH_ENV = /^\\begin\{(equation|align|gather|multline|eqnarray|flalign|alignat)(\*?)\}/;
 const VERBATIM_ENV = /\\begin\{(verbatim|lstlisting|minted|code)\}(\[[^\]\n]*\])?(\{[^}\n]*\})?\n?([\s\S]*?)\\end\{\1\}/g;
@@ -288,6 +288,8 @@ class Renderer {
     this.sec = [0, 0, 0];
     this.ids = new Set();
     this.footnotes = [];
+    this.cite = opts.cite || null; // key → { id, href, external, title, authors, year, venue } | null
+    this.cited = new Map();
     this.toc = [];
     this.depth = 0;
   }
@@ -854,7 +856,7 @@ class Renderer {
         const keys = arg().split(',').map((k) => k.trim()).filter(Boolean);
         const pre = o2 !== null ? o1 : null;
         const post = o2 !== null ? o2 : o1;
-        h = `<span class="tex-cite">[${pre ? `${this.inline(pre)} ` : ''}${keys.map((k) => `<span class="tex-cite-key">${esc(k)}</span>`).join(', ')}${post ? `, ${this.inline(post)}` : ''}]</span>`;
+        h = this.citeHtml(name, keys, pre ? this.inline(pre) : '', post ? this.inline(post) : '');
         break;
       }
       case 'ref': case 'autoref': case 'cref': case 'Cref': case 'pageref': case 'nameref': {
@@ -922,6 +924,31 @@ class Renderer {
     return { html: h, end: j };
   }
 
+  // Author-year citations (natbib style) of papers in the library; unknown keys are flagged.
+  citeHtml(name, keys, pre, post) {
+    const parts = keys.map((k) => {
+      const c = this.cite?.(k);
+      if (!c) return { who: `<span class="tex-cite-missing" title="No paper with this key in your library">${esc(k)}</span>`, year: '' };
+      if (!this.cited.has(c.id)) this.cited.set(c.id, c);
+      const tip = `title="${esc(texPlain(c.title))}"`;
+      const a = (t) => (c.href ? `<a class="tex-cite-link" href="${esc(c.href)}" ${tip}${c.external ? ' target="_blank" rel="noopener"' : ''}>${t}</a>` : `<span ${tip}>${t}</span>`);
+      return { who: a(esc(citeAuthors(c.authors))), year: a(esc(String(c.year || 'n.d.'))), both: a(`${esc(citeAuthors(c.authors))}, ${esc(String(c.year || 'n.d.'))}`) };
+    });
+    const pr = pre ? `${pre} ` : '';
+    const po = post ? `, ${post}` : '';
+    let h;
+    if (name === 'citeauthor') h = parts.map((x) => x.who).join(', ');
+    else if (name === 'citeyear') h = parts.map((x) => x.year || x.who).join(', ');
+    else if (name === 'citet' || name === 'textcite') {
+      h = parts.map((x, i) => (x.year ? `${x.who} (${i === 0 ? pr : ''}${x.year}${i === parts.length - 1 ? po : ''})` : x.who)).join(', ');
+    } else if (name === 'citealt') h = parts.map((x) => (x.year ? `${x.who} ${x.year}` : x.who)).join('; ');
+    else {
+      const inner = `${pr}${parts.map((x) => x.both || x.who).join('; ')}${po}`;
+      h = name === 'citealp' ? inner : `(${inner})`;
+    }
+    return `<span class="tex-cite">${h}</span>`;
+  }
+
   refHtml(label, paren) {
     const n = this.labels[label];
     const text = `${paren ? '(' : ''}${esc(n ?? '??')}${paren ? ')' : ''}`;
@@ -950,6 +977,16 @@ class Renderer {
       html += `<section class="tex-footnotes"><ol>${this.footnotes
         .map((f, k) => `<li id="${this.prefix}fn-${k + 1}">${f} <a class="fn-back" data-scroll="${this.prefix}fnref-${k + 1}">↩</a></li>`)
         .join('')}</ol></section>`;
+    }
+    if (this.cited.size) {
+      const refs = [...this.cited.values()].sort((a, b) => citeAuthors(a.authors).localeCompare(citeAuthors(b.authors)) || (a.year || 0) - (b.year || 0));
+      html += `<section class="tex-refs"><h4 class="tex-refs-title">References</h4><ul>${refs
+        .map((c) => {
+          const au = c.authors || [];
+          const who = au.length > 3 ? `${au.slice(0, 3).join(', ')} et al.` : au.join(', ');
+          return `<li>${esc(who || 'Anon.')} (${esc(String(c.year || 'n.d.'))}). ${c.href ? `<a href="${esc(c.href)}"${c.external ? ' target="_blank" rel="noopener"' : ''}>${esc(texPlain(c.title))}</a>` : esc(texPlain(c.title))}.${c.venue ? ` <em>${esc(c.venue)}</em>.` : ''}</li>`;
+        })
+        .join('')}</ul></section>`;
     }
     return {
       html: this.restore(html),

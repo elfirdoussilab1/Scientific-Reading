@@ -68,6 +68,13 @@ export function lastName(name = '') {
   return parts[parts.length - 1] || n;
 }
 
+/** "Vaswani", "Ho and Salimans", "Rafailov et al." */
+export function citeAuthors(authors = []) {
+  const n = authors.map(lastName).filter(Boolean);
+  if (!n.length) return 'Anon.';
+  return n.length === 1 ? n[0] : n.length === 2 ? `${n[0]} and ${n[1]}` : `${n[0]} et al.`;
+}
+
 export function authorsShort(authors = []) {
   if (!authors.length) return '';
   if (authors.length === 1) return lastName(authors[0]);

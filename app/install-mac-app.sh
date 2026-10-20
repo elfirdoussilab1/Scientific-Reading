@@ -5,8 +5,8 @@
 #   ./app/install-mac-app.sh /Applications   # or anywhere else
 #
 # The app starts serve.py in the background (if it isn't already running) and
-# opens the library in its own window. The server stops by itself ~15 minutes
-# after the last library window is closed. Re-run this script if you move the repo.
+# opens the library in a Google Chrome tab. The server stops by itself ~15 minutes
+# after the last library tab is closed. Re-run this script if you move the repo.
 
 set -euo pipefail
 
@@ -82,15 +82,8 @@ if ! running; then
   fi
 fi
 
-# Open in a clean app window (no tabs or address bar) when a Chromium browser is
-# installed; otherwise use the default browser.
-for b in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium"; do
-  if [[ -d "/Applications/\$b.app" || -d "\$HOME/Applications/\$b.app" ]]; then
-    open -na "\$b" --args --app="\$URL"
-    exit 0
-  fi
-done
-open "\$URL"
+# Open in a Google Chrome tab; fall back to the default browser without Chrome.
+open -a "Google Chrome" "\$URL" 2>/dev/null || open "\$URL"
 LAUNCH
 chmod +x "$APP/Contents/MacOS/launch"
 
