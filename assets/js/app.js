@@ -4,7 +4,7 @@ import { clickCompletion, closeCompletions, editorKeydown, insertAt, updateCompl
 import { icon } from './icons.js';
 import { citeKey, lookup, makeBibtex } from './meta.js';
 import { DEFAULT_SETTINGS, Store, serialize } from './store.js';
-import { parseMacros, renderInline, renderTeX, texPlain } from './tex.js';
+import { parseMacros, referencesHtml, renderInline, renderTeX, texPlain } from './tex.js';
 import {
   authorsList, citeAuthors, copyText, debounce, download, esc, fmtDate, lastName, parseDate,
   slugify, splitAuthors, splitTags, timeAgo, todayISO,
@@ -78,7 +78,8 @@ function macros() {
 const bibKey = (p) => /@\w+\s*\{\s*([^,\s]+)\s*,/.exec(p.bibtex || '')?.[1] || citeKey(p);
 let citeMap = null; // reset whenever the library changes
 let citeLib = null;
-function resolveCite(key) {
+/** `external`: link library papers to arXiv / their DOI instead of their page here (for the PDF). */
+function resolveCite(key, external = false) {
   if (!citeMap || citeLib !== lib()) {
     citeMap = new Map();
     citeLib = lib();
@@ -86,7 +87,7 @@ function resolveCite(key) {
     for (const keyOf of [bibKey, (p) => p.id, citeKey]) for (const p of papers) if (!citeMap.has(keyOf(p))) citeMap.set(keyOf(p), p);
   }
   const p = citeMap.get(key);
-  if (p) return { id: p.id, href: href('paper', p.id), title: p.title, authors: p.authors, year: p.year, venue: p.venue };
+  if (p) return { id: p.id, href: external ? refUrl(p) : href('paper', p.id), external, title: p.title, authors: p.authors, year: p.year, venue: p.venue };
   const r = lib().references.find((x) => x.key === key);
   return r ? { id: `ref:${r.key}`, href: refUrl(r), external: true, title: r.title, authors: r.authors, year: r.year, venue: r.venue } : null;
 }
@@ -107,6 +108,59 @@ function citeItems() {
       const who = `${citeAuthors(r.authors)}${r.year ? ` ${r.year}` : ''}`;
       return { key: r.key, label: title, hint: `${who} · ${r.key} · not in library`, search: `${r.key} ${title} ${(r.authors || []).join(' ')} ${r.year || ''}`.toLowerCase() };
     }));
+}
+
+// -- PDF export: a print-ready copy of the notes, saved with the browser's "Save as PDF"
+
+function notesDocument(p) {
+  const opts = (prefix) => ({ ...texOpts(prefix), references: false, cite: (k) => resolveCite(k, true) });
+  const abs = renderTeX(p.abstract, opts('a-'));
+  const sum = renderTeX(p.summary, opts('s-'));
+  const notes = renderTeX(p.notes, opts('n-'));
+  const links = [p.links?.arxiv, refUrl({ links: { doi: p.links?.doi } }), p.links?.code, !p.links?.arxiv && !p.links?.doi && p.links?.url]
+    .filter(Boolean)
+    .map((u) => `<span><a href="${esc(u)}">${esc(u.replace(/^https?:\/\/(www\.)?/, ''))}</a></span>`)
+    .join('');
+  const part = (title, r) => (r.html ? `<section class="pdoc-part"><h2 class="pdoc-part-title">${title}</h2><div class="tex-doc">${r.html}</div></section>` : '');
+  const styles = $$('link[rel="stylesheet"]').map((l) => `<link rel="stylesheet" href="${esc(l.href)}">`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(texPlain(p.title) || 'Notes')}</title>
+    ${styles}<link rel="stylesheet" href="${esc(new URL('assets/css/print.css', location.href).href)}"></head>
+  <body><article class="pdoc">
+    <header class="pdoc-head">
+      <p class="pdoc-kicker">Reading notes</p>
+      <h1 class="pdoc-title">${renderInline(p.title, opts('t-')) || 'Untitled'}</h1>
+      ${p.authors.length ? `<p class="pdoc-authors">${esc(authorsList(p.authors, 30))}</p>` : ''}
+      ${venueYear(p) ? `<p class="pdoc-venue">${esc(venueYear(p))}</p>` : ''}
+      ${links ? `<p class="pdoc-links">${links}</p>` : ''}
+    </header>
+    ${p.tldr ? `<p class="pdoc-tldr"><b>TL;DR</b>${renderInline(p.tldr, opts('i-'))}</p>` : ''}
+    ${abs.html ? `<section class="pdoc-abstract"><h2 class="pdoc-abstract-title">Abstract</h2><div class="tex-doc">${abs.html}</div></section>` : ''}
+    ${part('Summary', sum)}
+    ${part('Notes', notes)}
+    ${referencesHtml([...abs.cited, ...sum.cited, ...notes.cited])}
+    <p class="pdoc-foot">${esc([S().owner, fmtDate(todayISO())].filter(Boolean).join(' · '))}</p>
+  </article></body></html>`;
+}
+
+function exportPdf(p) {
+  $('#print-frame')?.remove();
+  const frame = document.createElement('iframe');
+  frame.id = 'print-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, { position: 'fixed', left: '-10000px', top: '0', width: '210mm', height: '297mm', border: '0' });
+  frame.srcdoc = notesDocument(p);
+  frame.addEventListener('load', async () => {
+    const w = frame.contentWindow;
+    void w.document.body.offsetHeight; // lay out first, so the fonts in use start loading
+    await w.document.fonts.ready;
+    const title = document.title;
+    document.title = w.document.title; // Chrome names the PDF after the page title
+    w.addEventListener('afterprint', () => { document.title = title; frame.remove(); });
+    w.focus();
+    w.print();
+  }, { once: true });
+  document.body.append(frame);
+  toast('Choose “Save as PDF” as the destination');
 }
 
 // -- citing a paper that is not in the library
@@ -565,6 +619,7 @@ function viewPaper(id) {
         ${edit ? `<a class="btn primary" href="${href('notes', p.id)}">${icon('pen')}Take notes<kbd>W</kbd></a>` : ''}
         ${links}
         <button class="btn" data-action="copy-bib">${icon('quote')}Cite</button>
+        <button class="btn" data-action="export-pdf" title="Title, abstract, summary, notes and references, as a PDF">${icon('download')}PDF</button>
         ${edit ? `<a class="btn ghost" href="${href('edit', p.id)}">${icon('edit')}Edit details<kbd>E</kbd></a><button class="icon-btn danger" data-action="delete-paper" title="Delete paper">${icon('trash')}</button>` : ''}
       </div>
     </header>
@@ -830,6 +885,7 @@ function viewNotes(id, params) {
       <span class="grow"></span>
       <div class="seg small hide-sm" id="draft-status">${statusPicker()}</div>
       ${pdf ? `<button class="btn ghost sm" data-action="toggle-pdf">${icon('file')}${showPdf ? 'Hide PDF' : 'Show PDF'}</button>` : ''}
+      <button class="btn ghost sm hide-sm" data-action="export-pdf" title="Export the notes as a PDF">${icon('download')}PDF</button>
       <a class="btn ghost sm hide-sm" href="${href('edit', d.id)}">${icon('edit')}Details</a>
       <button class="btn primary sm" data-action="finish-edit">${icon('check')}Done</button>
     </header>
@@ -1280,6 +1336,11 @@ const actions = {
     go(p.topics[0] && topicById(p.topics[0]) ? href('topic', p.topics[0]) : '#/');
   },
   // editing
+  'export-pdf': () => {
+    if (ui.draft) saveDraftNow();
+    const p = ui.draft || paperById(ui.route.id);
+    if (p) exportPdf(p);
+  },
   'finish-edit': finishEditing,
   'fetch-meta': fetchMeta,
   snip: (el) => { const ta = $('#writer-input'); if (ta) wrapSelection(ta, ...SNIPPETS[el.dataset.snip]); },

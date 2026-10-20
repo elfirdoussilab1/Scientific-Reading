@@ -42,6 +42,7 @@ It is a static site with no build step: plain HTML/CSS/JS plus [KaTeX](https://k
 - **Auto-fill**: paste an arXiv link or ID, a DOI, a BibTeX entry or a title, and the title, authors, venue, year, abstract and links are filled in.
 - **Reading workflow**: *To read → Reading → Read* status, a 1–5 rating, favourites, tags, an activity heatmap and a "Continue taking notes" row on the home page.
 - **Search** (`/` or `⌘K`) across titles, authors, tags, summaries and notes. `⌘↵` opens a result straight in the notes workspace.
+- **PDF export**: the **PDF** button (on a paper's page or in the notes workspace) typesets a paper's notes like an article: the title, authors and venue, the TL;DR, the abstract, the summary, the notes, and one References list for everything cited. Choose *Save as PDF* in the print dialog.
 - Blue-and-white theme by default, with a navy dark mode toggle. Works on mobile. Exports to JSON or `.bib`.
 
 ## Your notes stay private
@@ -138,6 +139,7 @@ Citations render author-year and link to the cited paper (its page in your libra
 ```
 index.html                 app shell
 assets/css/style.css       theme (blue & white by default, navy dark mode)
+assets/css/print.css       layout of the PDF export
 assets/js/app.js           views, grouping, notes workspace, search, dialogs
 assets/js/editor.js        LaTeX editing: autocomplete, auto-pairs, smart Enter/Tab
 assets/js/tex.js           LaTeX → HTML (text mode) + KaTeX (math)

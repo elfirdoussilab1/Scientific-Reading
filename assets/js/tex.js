@@ -290,6 +290,7 @@ class Renderer {
     this.footnotes = [];
     this.cite = opts.cite || null; // key → { id, href, external, title, authors, year, venue } | null
     this.cited = new Map();
+    this.references = opts.references !== false; // false: the caller lists the cited papers itself
     this.toc = [];
     this.depth = 0;
   }
@@ -978,31 +979,39 @@ class Renderer {
         .map((f, k) => `<li id="${this.prefix}fn-${k + 1}">${f} <a class="fn-back" data-scroll="${this.prefix}fnref-${k + 1}">↩</a></li>`)
         .join('')}</ol></section>`;
     }
-    if (this.cited.size) {
-      const refs = [...this.cited.values()].sort((a, b) => citeAuthors(a.authors).localeCompare(citeAuthors(b.authors)) || (a.year || 0) - (b.year || 0));
-      html += `<section class="tex-refs"><h4 class="tex-refs-title">References</h4><ul>${refs
-        .map((c) => {
-          const au = c.authors || [];
-          const who = au.length > 3 ? `${au.slice(0, 3).join(', ')} et al.` : au.join(', ');
-          return `<li>${esc(who || 'Anon.')} (${esc(String(c.year || 'n.d.'))}). ${c.href ? `<a href="${esc(c.href)}"${c.external ? ' target="_blank" rel="noopener"' : ''}>${esc(texPlain(c.title))}</a>` : esc(texPlain(c.title))}.${c.venue ? ` <em>${esc(c.venue)}</em>.` : ''}</li>`;
-        })
-        .join('')}</ul></section>`;
-    }
+    if (this.references) html += referencesHtml([...this.cited.values()]);
     return {
+      cited: [...this.cited.values()],
       html: this.restore(html),
       toc: this.toc.map((t) => ({ ...t, html: this.restore(t.html) })),
     };
   }
 }
 
-/** Renders a LaTeX document fragment. Returns { html, toc }. */
+/** The "References" list for the papers cited by one or more documents (see renderTeX's `cited`). */
+export function referencesHtml(cited) {
+  const seen = new Set();
+  const refs = cited
+    .filter((c) => !seen.has(c.id) && seen.add(c.id))
+    .sort((a, b) => citeAuthors(a.authors).localeCompare(citeAuthors(b.authors)) || (a.year || 0) - (b.year || 0));
+  if (!refs.length) return '';
+  return `<section class="tex-refs"><h4 class="tex-refs-title">References</h4><ul>${refs
+    .map((c) => {
+      const au = c.authors || [];
+      const who = au.length > 3 ? `${au.slice(0, 3).join(', ')} et al.` : au.join(', ');
+      return `<li>${esc(who || 'Anon.')} (${esc(String(c.year || 'n.d.'))}). ${c.href ? `<a href="${esc(c.href)}"${c.external ? ' target="_blank" rel="noopener"' : ''}>${esc(texPlain(c.title))}</a>` : esc(texPlain(c.title))}.${c.venue ? ` <em>${esc(c.venue)}</em>.` : ''}</li>`;
+    })
+    .join('')}</ul></section>`;
+}
+
+/** Renders a LaTeX document fragment. Returns { html, toc, cited }. */
 export function renderTeX(src, opts = {}) {
-  if (!String(src ?? '').trim()) return { html: '', toc: [] };
+  if (!String(src ?? '').trim()) return { html: '', toc: [], cited: [] };
   try {
     return new Renderer(opts).document(src);
   } catch (e) {
     console.error(e);
-    return { html: `<pre class="tex-code tex-error">${esc(src)}</pre>`, toc: [] };
+    return { html: `<pre class="tex-code tex-error">${esc(src)}</pre>`, toc: [], cited: [] };
   }
 }
 
