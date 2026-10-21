@@ -535,7 +535,6 @@ a.stat:hover { border-color: var(--line-2); }
 .doc-edit:hover { background: var(--bg-2); color: var(--ink); }
 .doc-empty { font: italic 16px/1.5 var(--serif); color: var(--ink-3); }
 .doc-empty a { color: var(--accent); font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
-[data-dbl-edit] { cursor: text; }
 .bibtex { position: relative; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
 .bibtex pre { margin: 0; padding: 14px 50px 14px 16px; overflow-x: auto; font: 12px/1.6 var(--mono); color: var(--ink-2); }
 .bibtex .icon-btn { position: absolute; top: 8px; right: 8px; }

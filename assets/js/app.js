@@ -600,7 +600,7 @@ function viewPaper(id) {
     .map((k) => `<button class="star${k <= p.rating ? ' on' : ''}" ${edit ? `data-action="rate" data-v="${k}"` : 'disabled'} aria-label="${k} stars">★</button>`).join('');
   const docBody = (r, tab, emptyText) =>
     r.html
-      ? `<div class="tex-doc"${edit ? ` data-dbl-edit="${tab}" title="Double-click to edit"` : ''}>${r.html}</div>`
+      ? `<div class="tex-doc">${r.html}</div>`
       : `<p class="doc-empty">${emptyText}${edit ? ` <a href="${href('notes', p.id, `?tab=${tab}`)}">Start writing</a>` : ''}</p>`;
   return `
   <article class="paper" style="--c:${paperColor(p)}">
@@ -1427,11 +1427,6 @@ function bindEvents() {
     if (e.target.closest('#palette a.pal-item') || e.target === $('#palette')) $('#palette').close();
     if (e.target === dialog()) closeDialog();
     if (!e.target.closest('#writer-input')) closeCompletions();
-  });
-
-  document.addEventListener('dblclick', (e) => {
-    const el = e.target.closest('[data-dbl-edit]');
-    if (el && ui.route.name === 'paper') go(href('notes', ui.route.id, `?tab=${el.dataset.dblEdit}`));
   });
 
   document.addEventListener('pointerdown', (e) => {
