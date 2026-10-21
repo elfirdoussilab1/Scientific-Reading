@@ -65,7 +65,19 @@ Then open **Scientific Reading** from Spotlight or Launchpad, or drag it to the 
 
 The app remembers where this folder lives, so run the script again if you move the repo. The first time, macOS may ask whether the app can access the folder that contains the repo (for example, Desktop). Click **Allow**.
 
-### From the terminal
+## Use it on Linux (Fedora)
+
+### Desktop app
+
+```bash
+./app/install-linux-app.sh     # adds "Scientific Reading" to your app grid
+```
+
+Then press <kbd>Super</kbd>, type *Scientific Reading* and open it; right-click its icon in the dock and choose **Pin to Dash** to keep it there. As on the Mac, it starts the library server in the background and opens the library in a Google Chrome tab (Chromium, or your default browser, if Chrome isn't installed). The server stops by itself about 15 minutes after you close the tab. Logs go to `~/.local/state/scientific-reading/server.log`.
+
+It installs only for your user (nothing needs `sudo`) and uses Python 3, which Fedora ships with. It should also work on other distributions and desktops that follow the freedesktop standards (GNOME, KDE, …). Run the script again if you move the repo, and `./app/install-linux-app.sh --uninstall` to remove it; your library is not touched.
+
+## From the terminal
 
 ```bash
 python3 serve.py              # opens http://localhost:8642 in Chrome
@@ -146,7 +158,7 @@ assets/js/tex.js           LaTeX → HTML (text mode) + KaTeX (math)
 assets/js/meta.js          arXiv / DOI / BibTeX lookups and BibTeX export
 assets/js/store.js         storage: local server, GitHub API, or browser
 serve.py                   local server (port 8642) that saves edits to data/library.json
-app/                       Mac app: icon + install-mac-app.sh
+app/                       desktop app: icon, install-mac-app.sh, install-linux-app.sh
 data/example-library.json  example papers, shown until your own library exists
 docs/screenshots/          images used in this README
 ```

@@ -131,11 +131,12 @@ def open_in_chrome(url):
         if subprocess.run(["open", "-a", "Google Chrome", url], capture_output=True).returncode == 0:
             return
     else:
-        try:
-            if webbrowser.get("chrome").open(url):
-                return
-        except webbrowser.Error:
-            pass
+        for name in ("google-chrome", "google-chrome-stable", "chrome", "chromium-browser", "chromium"):
+            try:
+                if webbrowser.get(name).open(url):
+                    return
+            except webbrowser.Error:
+                pass
     webbrowser.open(url)
 
 
