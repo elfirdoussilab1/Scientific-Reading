@@ -63,7 +63,12 @@ const lib = () => store.lib;
 const S = () => store.lib.settings;
 const topicById = (id) => lib().topics.find((t) => t.id === id);
 const paperById = (id) => lib().papers.find((p) => p.id === id);
-const paperColor = (p) => topicById(p.topics[0])?.color || NO_TOPIC;
+// Gradient stops giving each of the paper's topics an equal band of colour.
+const paperStops = (p) => {
+  const colors = p.topics.map(topicById).filter(Boolean).map((t) => t.color);
+  const c = colors.length ? colors : [NO_TOPIC];
+  return c.map((col, i) => `${col} ${(i * 100) / c.length}% ${((i + 1) * 100) / c.length}%`).join(',');
+};
 const papersIn = (topicId) => lib().papers.filter((p) => p.topics.includes(topicId));
 const words = (tex) => (tex ? texPlain(tex).split(/\s+/).filter(Boolean).length : 0);
 const fmtWords = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -316,7 +321,7 @@ function sheet(p) {
   const t = topicById(p.topics[0]);
   const w = words(p.notes) + words(p.summary);
   const b = blurb(p);
-  return `<a class="sheet" href="${href('paper', p.id)}" style="--c:${paperColor(p)}">
+  return `<a class="sheet" href="${href('paper', p.id)}" style="--stops:${paperStops(p)}">
     <div class="sheet-head"><span class="sheet-venue">${esc(venueYear(p)) || '&nbsp;'}</span>${badge(p.status)}</div>
     <h3 class="sheet-title">${inl(p.title)}</h3>
     <p class="sheet-authors">${esc(authorsLine(p.authors))}</p>
@@ -530,7 +535,7 @@ function viewHome() {
       ${heatmap(papers)}
     </section>
     ${reading.length && store.canEdit ? `<section class="continue"><h2 class="section-title">Continue taking notes</h2><div class="continue-row">${reading
-      .map((p) => `<a class="continue-card" href="${href('notes', p.id)}" style="--c:${paperColor(p)}">
+      .map((p) => `<a class="continue-card" href="${href('notes', p.id)}" style="--stops:${paperStops(p)}">
           <span class="cc-title">${inl(p.title)}</span><span class="cc-meta">${esc(authorsLine(p.authors))}${p.year ? ` · ${esc(p.year)}` : ''}</span>
           <span class="cc-action">${icon('pen')}Open notes${words(p.notes) ? ` · ${fmtWords(words(p.notes))} words so far` : ''}</span></a>`)
       .join('')}</div></section>` : ''}
@@ -603,7 +608,7 @@ function viewPaper(id) {
       ? `<div class="tex-doc">${r.html}</div>`
       : `<p class="doc-empty">${emptyText}${edit ? ` <a href="${href('notes', p.id, `?tab=${tab}`)}">Start writing</a>` : ''}</p>`;
   return `
-  <article class="paper" style="--c:${paperColor(p)}">
+  <article class="paper" style="--stops:${paperStops(p)}">
     <nav class="crumbs"><a href="#/">Library</a>${p.topics.map(topicById).filter(Boolean)
       .map((t) => `<span class="sep">/</span><a href="${href('topic', t.id)}" style="--c:${t.color}" class="crumb-topic"><span class="tdot"></span>${esc(t.name)}</a>`).join('')}</nav>
     <header class="paper-head">
@@ -878,10 +883,10 @@ function viewNotes(id, params) {
   const pdf = pdfUrl(d);
   const showPdf = !!(ui.pdfOn && pdf);
   return `
-  <div class="reader${showPdf ? '' : ' no-pdf'}" style="--pdf-w:${ui.pdfWidth}%;--c:${paperColor(d)}">
+  <div class="reader${showPdf ? '' : ' no-pdf'}" style="--pdf-w:${ui.pdfWidth}%;--stops:${paperStops(d)}">
     <header class="reader-head">
       <a class="icon-btn" href="${href('paper', d.id)}" title="Back to the paper (Esc)">${icon('chevronLeft')}</a>
-      <div class="reader-title"><span class="tdot"></span><span class="rt">${inl(d.title)}</span></div>
+      <div class="reader-title"><span class="tdot bands"></span><span class="rt">${inl(d.title)}</span></div>
       <span class="grow"></span>
       <div class="seg small hide-sm" id="draft-status">${statusPicker()}</div>
       ${pdf ? `<button class="btn ghost sm" data-action="toggle-pdf">${icon('file')}${showPdf ? 'Hide PDF' : 'Show PDF'}</button>` : ''}
@@ -1135,7 +1140,7 @@ function renderResults(q) {
     html += `<p class="pal-group">${toks.length ? 'Papers' : 'Recently edited'}</p>`;
     html += papers.map(({ p, snippet }) => {
       palItems.push(href('paper', p.id));
-      return `<a class="pal-item" href="${href('paper', p.id)}" style="--c:${paperColor(p)}"><span class="tdot"></span><span class="pal-text">
+      return `<a class="pal-item" href="${href('paper', p.id)}" style="--stops:${paperStops(p)}"><span class="tdot bands"></span><span class="pal-text">
         <span class="pal-title">${mark(texPlain(p.title))}</span><span class="pal-meta">${mark(authorsLine(p.authors))}${p.year ? ` · ${esc(p.year)}` : ''}${p.tags.length ? ` · ${mark(p.tags.map((t) => `#${t}`).join(' '))}` : ''}</span>
         ${snippet ? `<span class="pal-snippet">${mark(snippet)}</span>` : ''}</span>${badge(p.status)}</a>`;
     }).join('');
