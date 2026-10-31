@@ -2,7 +2,7 @@
 
 import { clickCompletion, closeCompletions, editorKeydown, insertAt, updateCompletions, wrapSelection } from './editor.js';
 import { icon } from './icons.js';
-import { citeKey, lookup, makeBibtex } from './meta.js';
+import { citeKey, lookup, makeBibtex, parseArxivId, parseDoi } from './meta.js';
 import { DEFAULT_SETTINGS, Store, serialize } from './store.js';
 import { parseMacros, referencesHtml, renderInline, renderTeX, texPlain } from './tex.js';
 import {
@@ -70,6 +70,26 @@ const paperStops = (p) => {
   return c.map((col, i) => `${col} ${(i * 100) / c.length}% ${((i + 1) * 100) / c.length}%`).join(',');
 };
 const papersIn = (topicId) => lib().papers.filter((p) => p.topics.includes(topicId));
+
+// What identifies a paper: its arXiv ID (whatever the version), its DOI and its title (ignoring case and punctuation).
+function paperKeys(p) {
+  const keys = new Set();
+  for (const link of Object.values(p.links || {})) {
+    const doi = parseDoi(link)?.toLowerCase();
+    const ax = parseArxivId(link) || /^10\.48550\/arxiv\.(.+)$/.exec(doi)?.[1];
+    if (ax) keys.add(`arxiv:${ax.toLowerCase()}`);
+    else if (doi) keys.add(`doi:${doi}`);
+  }
+  const title = texPlain(p.title || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  if (title) keys.add(`title:${title}`);
+  return keys;
+}
+
+/** The other paper in the library that `c` is a copy of, if any. */
+function duplicateOf(c) {
+  const keys = paperKeys(c);
+  return lib().papers.find((p) => p.id !== c.id && [...paperKeys(p)].some((k) => keys.has(k)));
+}
 const words = (tex) => (tex ? texPlain(tex).split(/\s+/).filter(Boolean).length : 0);
 const fmtWords = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 const href = (name, id, q = '') => `#/${name}/${encodeURIComponent(id)}${q}`;
@@ -216,7 +236,7 @@ function citeReference(m, toRead) {
     links: Object.fromEntries(Object.entries(m.links || {}).filter(([, v]) => v)), bibtex: m.bibtex || '',
   };
   let key;
-  const paper = lib().papers.find(same);
+  const paper = duplicateOf(m);
   const ref = !paper && lib().references.find(same);
   if (paper) key = bibKey(paper);
   else if (toRead) {
@@ -417,7 +437,8 @@ function renderSaveState() {
   if (!el) return;
   let text;
   let cls = 'ok';
-  if (ui.dirty && !ui.draft?.id && !ui.draft?.title.trim()) { text = 'Saves once it has a title'; cls = 'pending'; }
+  if (ui.draft && !ui.draft.id && duplicateOf(ui.draft)) { text = 'Not saved: already in your library'; cls = 'error'; }
+  else if (ui.dirty && !ui.draft?.id && !ui.draft?.title.trim()) { text = 'Saves once it has a title'; cls = 'pending'; }
   else if (ui.dirty) { text = 'Editing…'; cls = 'pending'; }
   else if (!ui.draft?.id) { text = 'Saves once it has a title'; cls = 'pending'; }
   else if (store.status.state === 'saving') { text = 'Saving…'; cls = 'pending'; }
@@ -690,20 +711,35 @@ let autosaveTimer = 0;
 function draftChanged() {
   ui.dirty = true;
   renderSaveState();
+  renderDuplicate();
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(saveDraftNow, 800);
+  autosaveTimer = setTimeout(() => {
+    // A title still being typed could be half of one, so a new paper waits until you leave the field.
+    if (!ui.draft?.id && document.activeElement?.matches('.title-input')) return;
+    saveDraftNow();
+  }, 800);
 }
 
-function draftHasContent(d) {
-  return !!(d.title.trim() || d.authors.length || d.summary.trim() || (d.notes.trim() && d.notes !== (S().notesTemplate || '')));
+const draftHasWriting = (d) => !!(d.summary.trim() || (d.notes.trim() && d.notes !== (S().notesTemplate || '')));
+const draftHasContent = (d) => !!(d.title.trim() || d.authors.length || draftHasWriting(d));
+const DUPLICATE_MSG = 'This paper is already in your library.';
+
+const duplicateHTML = (p) => (p ? `<b>Already in your library:</b> <a href="${href('paper', p.id)}">${inl(p.title)}</a>` : '');
+
+function renderDuplicate(p = duplicateOf(ui.draft)) {
+  const el = $('#dup-notice');
+  if (!el) return;
+  el.hidden = !p;
+  el.innerHTML = duplicateHTML(p);
 }
 
-/** Writes the draft into the library. New papers are created as soon as they have a title. */
+/** Writes the draft into the library. New papers are created once they have a title, unless they are already there. */
 function saveDraftNow() {
   clearTimeout(autosaveTimer);
   const d = ui.draft;
   if (!d || !ui.dirty) return true;
   if (!d.id && !d.title.trim()) return false;
+  if (!d.id && duplicateOf(d)) return false;
   const copy = structuredClone(d);
   copy.title = copy.title.replace(/\s+/g, ' ').trim();
   for (const k of Object.keys(copy.links)) if (!copy.links[k]) delete copy.links[k];
@@ -741,8 +777,16 @@ function finishEditing() {
     $('.title-input')?.focus();
     return;
   }
-  saveDraftNow();
+  if (!saveDraftNow()) {
+    toast(DUPLICATE_MSG, 'error');
+    return;
+  }
   go(href('paper', d.id));
+}
+
+function saveShortcut() {
+  if (saveDraftNow()) toast('Saved', 'ok');
+  else toast(duplicateOf(ui.draft) ? DUPLICATE_MSG : 'Give the paper a title first.', 'error');
 }
 
 function setDraftField(name, value) {
@@ -846,6 +890,7 @@ function viewEditor(id, params) {
         </div>
       </div>
     </section>
+    <div class="dup-notice" id="dup-notice" role="alert"${duplicateOf(d) ? '' : ' hidden'}>${duplicateHTML(duplicateOf(d))}</div>
     <section class="form-card">
       <label class="field wide"><span>Title</span><textarea data-field="title" rows="1" class="title-input" placeholder="Attention Is All You Need">${esc(d.title)}</textarea></label>
       ${field('authors', 'Authors <em>comma-separated</em>', d.authors.join(', '), 'placeholder="Ashish Vaswani, Noam Shazeer, …"')}
@@ -912,11 +957,20 @@ async function fetchMeta() {
   const btn = $('[data-action="fetch-meta"]');
   const q = input.value.trim();
   if (!q) { input.focus(); return; }
+  const refuse = (p) => {
+    renderDuplicate(p);
+    toast(DUPLICATE_MSG, 'error');
+  };
+  // No need to look up a link or title the library already has.
+  const known = duplicateOf({ id: ui.draft.id, title: q, links: { q } });
+  if (known) { refuse(known); return; }
   btn.disabled = true;
   btn.classList.add('loading');
   try {
     const m = await lookup(q);
     const d = ui.draft;
+    const dup = duplicateOf({ id: d.id, title: m.title, links: m.links });
+    if (dup) { refuse(dup); return; }
     for (const k of ['title', 'year', 'venue', 'abstract']) if (m[k]) d[k] = m[k];
     if (m.authors?.length) d.authors = m.authors;
     d.links = { ...d.links, ...Object.fromEntries(Object.entries(m.links || {}).filter(([, v]) => v)) };
@@ -1227,7 +1281,10 @@ function autosizeTitle() {
 function onRoute() {
   if (ui.ignoreHash) { ui.ignoreHash = false; return; }
   if (ui.draft && location.hash !== ui.draftKey) {
-    if (!saveDraftNow() && draftHasContent(ui.draft) && !window.confirm('This new paper has no title yet, so it was not saved. Discard it?')) {
+    const saved = saveDraftNow();
+    const dup = !saved && duplicateOf(ui.draft);
+    if (!saved && (dup ? draftHasWriting(ui.draft) : draftHasContent(ui.draft))
+      && !window.confirm(dup ? 'This paper is already in your library, so it was not saved. Discard what you wrote?' : 'This new paper has no title yet, so it was not saved. Discard it?')) {
       ui.ignoreHash = true;
       location.hash = ui.currentHash;
       return;
@@ -1462,6 +1519,11 @@ function bindEvents() {
     }
   });
 
+  document.addEventListener('focusout', (e) => {
+    // Switching to another window also blurs the field, but the title may not be finished.
+    if (e.target.matches('.title-input') && ui.draft && !ui.draft.id && document.hasFocus()) saveDraftNow();
+  });
+
   document.addEventListener('input', (e) => {
     const t = e.target;
     if (!ui.draft) return;
@@ -1551,12 +1613,12 @@ function bindEvents() {
   document.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;
     if (e.target.id === 'writer-input') {
-      if (editorKeydown(e, e.target, { onSave: () => { saveDraftNow(); toast('Saved', 'ok'); } })) return;
+      if (editorKeydown(e, e.target, { onSave: saveShortcut })) return;
       if (e.key === 'Escape' && ui.route.name === 'notes') { e.preventDefault(); finishEditing(); }
       return;
     }
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); return; }
-    if (mod && e.key.toLowerCase() === 's' && ui.draft) { e.preventDefault(); saveDraftNow(); toast('Saved', 'ok'); return; }
+    if (mod && e.key.toLowerCase() === 's' && ui.draft) { e.preventDefault(); saveShortcut(); return; }
     if (e.target.id === 'import-input' && e.key === 'Enter') { e.preventDefault(); fetchMeta(); return; }
     if (e.target.matches('[data-form="reference"] textarea') && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.target.form.requestSubmit(); return; }
     const typing = e.target.closest?.('input, textarea, select, [contenteditable]');

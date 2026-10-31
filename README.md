@@ -38,7 +38,8 @@ It is a static site with no build step: plain HTML/CSS/JS plus [KaTeX](https://k
   - `⌘B` / `⌘I` / `⌘M` insert bold, emphasis and inline math;
   - a snippet toolbar inserts definitions, theorems, ideas, open questions, tables and algorithms;
   - a live word count.
-- **Autosave**: everything you type is saved automatically. A new paper is saved as soon as it has a title.
+- **Autosave**: everything you type is saved automatically. A new paper is saved once you've filled in its title and left the field.
+- **No duplicates**: a paper with the same arXiv ID, DOI or title as one in your library isn't added. You get a message with a link to the existing paper.
 - **Auto-fill**: paste an arXiv link or ID, a DOI, a BibTeX entry or a title, and the title, authors, venue, year, abstract and links are filled in.
 - **Reading workflow**: *To read → Reading → Read* status, a 1–5 rating, favourites, tags, an activity heatmap and a "Continue taking notes" row on the home page.
 - **Search** (`/` or `⌘K`) across titles, authors, tags, summaries and notes. `⌘↵` opens a result straight in the notes workspace.
