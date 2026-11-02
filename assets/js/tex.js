@@ -230,7 +230,7 @@ function extractDefs(src, macros) {
       name = src.slice(j + 1, e).trim();
       j = e + 1;
     } else {
-      const mm = /^\\[a-zA-Z]+/.exec(src.slice(j));
+      const mm = /^\\(?:[a-zA-Z]+|[0-9])/.exec(src.slice(j));
       if (!mm) continue;
       name = mm[0];
       j += name.length;
@@ -250,7 +250,7 @@ function extractDefs(src, macros) {
     const e = findClosing(src, j);
     if (e < 0) continue;
     const body = src.slice(j + 1, e);
-    if (/^\\[a-zA-Z]+$/.test(name)) {
+    if (/^\\(?:[a-zA-Z]+|[0-9])$/.test(name)) {
       macros[name] = m[1] === 'DeclareMathOperator' ? `\\operatorname${m[2]}{${body}}` : body;
     }
     out += src.slice(i, m.index);
@@ -263,6 +263,28 @@ function extractDefs(src, macros) {
 export function parseMacros(preamble = '') {
   const macros = {};
   extractDefs(stripComments(preamble), macros);
+  return macros;
+}
+
+// What a LaTeX preamble needs but KaTeX cannot run (\mathchoice, \setbox, \vrule, \DeclareMathAlphabet …),
+// written with commands it has.
+const NOTATION_FIXES = String.raw`
+\newcommand{\restr}[2]{\left.#1\right|_{#2}}
+\newcommand{\restrictionn}[2]{\left.#1\right|_{#2}}
+\newcommand{\mathsfit}[1]{\textsf{\textit{#1}}}
+\newcommand{\tens}[1]{\textsf{\textbf{#1}}}
+\newcommand{\etLambda}{{\mathsf{\Lambda}}}
+\newcommand{\indep}{\mathrel{\perp\!\!\!\perp}}
+\newcommand{\un}{\text{𝟙}}
+\newcommand{\ab}{\allowbreak}
+\newcommand{\rvi}{{\mathbf{i}}}
+`;
+const NOTATION_HELPERS = ['\\restraux', '\\restrictionaux', '\\restrictionnaux'];
+
+/** The macros of a whole LaTeX preamble file, adapted to KaTeX. */
+export function parseNotations(preamble = '') {
+  const macros = { ...parseMacros(preamble), ...parseMacros(NOTATION_FIXES) };
+  for (const name of NOTATION_HELPERS) delete macros[name];
   return macros;
 }
 

@@ -4,7 +4,7 @@ import { clickCompletion, closeCompletions, editorKeydown, insertAt, updateCompl
 import { icon } from './icons.js';
 import { citeKey, lookup, makeBibtex, parseArxivId, parseDoi } from './meta.js';
 import { DEFAULT_SETTINGS, Store, serialize } from './store.js';
-import { parseMacros, referencesHtml, renderInline, renderTeX, texPlain } from './tex.js';
+import { parseMacros, parseNotations, referencesHtml, renderInline, renderTeX, texPlain } from './tex.js';
 import {
   authorsList, citeAuthors, copyText, debounce, download, esc, fmtDate, lastName, parseDate,
   slugify, splitAuthors, splitTags, timeAgo, todayISO,
@@ -94,9 +94,17 @@ const words = (tex) => (tex ? texPlain(tex).split(/\s+/).filter(Boolean).length 
 const fmtWords = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 const href = (name, id, q = '') => `#/${name}/${encodeURIComponent(id)}${q}`;
 
+let notations = {}; // from maths.tex; Settings → LaTeX macros and the note itself can redefine them
+async function loadNotations() {
+  try {
+    const r = await fetch('maths.tex', { cache: 'no-cache' });
+    if (r.ok) notations = parseNotations(await r.text());
+  } catch { /* notes still render, without these commands */ }
+}
+
 let macroCache = { src: null, macros: {} };
 function macros() {
-  if (macroCache.src !== S().macros) macroCache = { src: S().macros, macros: parseMacros(S().macros) };
+  if (macroCache.src !== S().macros) macroCache = { src: S().macros, macros: { ...notations, ...parseMacros(S().macros) } };
   return macroCache.macros;
 }
 // Citations: \cite{key} finds a library paper by its BibTeX key, its generated key or its id.
@@ -1059,7 +1067,7 @@ function settingsDialog(focus) {
           <label class="field"><span>Your name</span><input name="owner" value="${esc(s.owner)}" placeholder="Shown in the greeting"></label>
         </div></fieldset>
       <fieldset ${ro ? 'disabled' : ''}><legend>Writing</legend>
-        <label class="field"><span>LaTeX macros <em>available in every note and suggested by autocomplete</em></span><textarea name="macros" rows="6" class="mono" spellcheck="false">${esc(s.macros)}</textarea></label>
+        <label class="field"><span>LaTeX macros <em>added to the notations in maths.tex; available in every note and suggested by autocomplete</em></span><textarea name="macros" rows="6" class="mono" spellcheck="false">${esc(s.macros)}</textarea></label>
         <label class="field"><span>Template for new notes</span><textarea name="notesTemplate" rows="6" class="mono" spellcheck="false">${esc(s.notesTemplate)}</textarea></label>
         <label class="check"><input type="checkbox" name="numberSections"${s.numberSections ? ' checked' : ''}> Number sections (1, 1.1, …)</label>
         <div class="dlg-actions"><span class="grow"></span><button class="btn primary">Save settings</button></div></fieldset>
@@ -1645,7 +1653,7 @@ async function main() {
   if (pref.get('theme', null) === 'dark') document.documentElement.dataset.theme = 'dark';
   bindEvents();
   try {
-    await store.init();
+    await Promise.all([store.init(), loadNotations()]);
   } catch (e) {
     $('#view').innerHTML = emptyState('Could not open the library', esc(e.message));
     return;

@@ -124,7 +124,9 @@ function candidates(word, envMode, macros) {
   const starts = pool.filter((c) => c.key.toLowerCase().startsWith(w));
   const contains = w.length > 1 ? pool.filter((c) => !starts.includes(c) && c.key.toLowerCase().includes(w)) : [];
   const seen = new Set();
-  return [...starts.sort((a, b) => a.key.length - b.key.length), ...contains]
+  // The exact name first, then LaTeX's own commands, so that notations like \tH don't get in the way of \theta.
+  const rank = (c) => (c.key === word ? 0 : c.kind === 'macro' ? 2 : 1);
+  return [...starts.sort((a, b) => rank(a) - rank(b) || a.key.length - b.key.length), ...contains]
     .filter((c) => !seen.has(c.label) && seen.add(c.label))
     .slice(0, 8);
 }

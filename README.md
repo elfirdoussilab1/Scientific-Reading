@@ -118,6 +118,7 @@ Write the body of a document, without a preamble. Supported:
 | Text | `\textbf`, `\emph`, `\texttt`, `\textsc`, `\underline`, `\textcolor`, `\hl`, `\href`, `\url`, `\footnote`, `\todo`, `verbatim` / `lstlisting`, `\verb`, accents, `--` / `---`, `` ``quotes'' `` |
 | Citations | `\cite`/`\citep`, `\citet`, `\citealp`, `\citeauthor`, `\citeyear` of papers in your library, with `[pre][post]` notes (see below) |
 | Macros | `\newcommand`, `\renewcommand`, `\DeclareMathOperator` in a note, or globally in **Settings → LaTeX macros** (defaults: `\E`, `\R`, `\KL`, `\norm`, `\argmax`, `\argmin`). Macros also show up in autocomplete. |
+| Notations | Every command in [`maths.tex`](maths.tex) works in all notes: `\vx`, `\mA`, `\rvx`, `\tA`, `\gD`, `\sR`, `\pdata`, `\Var`, `\indep`, `\restr{f}{x}`, `\figref{…}` … Edit the file to add your own; Settings and `\newcommand` in a note take priority over it. |
 
 ### Citing other papers
 
@@ -156,6 +157,7 @@ assets/css/print.css       layout of the PDF export
 assets/js/app.js           views, grouping, notes workspace, search, dialogs
 assets/js/editor.js        LaTeX editing: autocomplete, auto-pairs, smart Enter/Tab
 assets/js/tex.js           LaTeX → HTML (text mode) + KaTeX (math)
+maths.tex                  math notations available in every note
 assets/js/meta.js          arXiv / DOI / BibTeX lookups and BibTeX export
 assets/js/store.js         storage: local server, GitHub API, or browser
 serve.py                   local server (port 8642) that saves edits to data/library.json
