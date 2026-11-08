@@ -7,6 +7,8 @@
 
 Serves the app and saves every edit straight to data/library.json, keeping
 timestamped backups in data/.backups/. Only listens on 127.0.0.1.
+Also fetches conference pages for the app (browsers can't read them directly),
+so it can fill in a paper's details from its NeurIPS / PMLR / ACL … page.
 No dependencies beyond the Python standard library.
 """
 
@@ -22,7 +24,9 @@ import time
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+import urllib.error
+import urllib.request
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data" / "library.json"  # personal, git-ignored
@@ -30,6 +34,9 @@ EXAMPLE = ROOT / "data" / "example-library.json"  # shown until you save your fi
 BACKUPS = ROOT / "data" / ".backups"
 KEEP_BACKUPS = 50
 BACKUP_EVERY = 10 * 60  # seconds between two backups
+
+PAGE_LIMIT = 8 * 1024 * 1024  # bytes read from a paper's page
+USER_AGENT = "ScientificReading/1.0 (paper metadata lookup)"
 
 _lock = threading.Lock()
 _last_backup = 0.0
@@ -59,6 +66,39 @@ def write_atomic(path: Path, text: str):
         raise
 
 
+def fetch_page(url):
+    """GET a paper's page: (status, final url, content type, text). curl uses the system's
+    certificates, which python.org builds of Python don't, so it goes first."""
+    accept = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5"
+    if shutil.which("curl"):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "page"
+            p = subprocess.run(
+                ["curl", "-sS", "-L", "--max-redirs", "5", "--proto", "=http,https", "--proto-redir", "=http,https",
+                 "-m", "20", "--max-filesize", str(PAGE_LIMIT), "-A", USER_AGENT, "-H", f"Accept: {accept}",
+                 "-o", str(out), "-w", "%{http_code}\n%{content_type}\n%{url_effective}", "--url", url],
+                capture_output=True, text=True, timeout=30,
+            )
+            if p.returncode != 0:
+                raise OSError(p.stderr.strip().removeprefix("curl: ") or f"curl exited with {p.returncode}")
+            status, ctype, final = (p.stdout.split("\n") + ["", ""])[:3]
+            raw = out.read_bytes() if out.exists() else b""
+            status = int(status or 0)
+    else:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                status, ctype, final, raw = r.status, r.headers.get("Content-Type", ""), r.url, r.read(PAGE_LIMIT)
+        except urllib.error.HTTPError as e:
+            status, ctype, final, raw = e.code, e.headers.get("Content-Type", ""), e.url, e.read(PAGE_LIMIT)
+    charset = next((part.split("=", 1)[1].strip(' "') for part in ctype.split(";") if part.strip().lower().startswith("charset=")), "utf-8")
+    try:
+        text = raw.decode(charset, errors="replace")
+    except LookupError:
+        text = raw.decode("utf-8", errors="replace")
+    return status, final or url, ctype, text
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -81,8 +121,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _same_origin(self):
+        """Only the app itself may call the API: not other sites, nor a site whose name points at 127.0.0.1."""
+        host = self.headers.get("Host", "")
+        if urlsplit(f"//{host}").hostname not in ("localhost", "127.0.0.1"):
+            return False
         origin = self.headers.get("Origin")
-        return origin is None or urlsplit(origin).netloc == self.headers.get("Host")
+        if origin is not None and urlsplit(origin).netloc != host:
+            return False
+        return self.headers.get("Sec-Fetch-Site") in (None, "same-origin", "none")
 
     def do_GET(self):
         path = urlsplit(self.path).path
@@ -97,6 +143,17 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/api/page":
+            if not self._same_origin():
+                return self._json(403, {"error": "cross-origin request refused"})
+            url = parse_qs(urlsplit(self.path).query).get("url", [""])[0]
+            if urlsplit(url).scheme not in ("http", "https"):
+                return self._json(400, {"error": "Only http(s) links can be read"})
+            try:
+                status, final, ctype, text = fetch_page(url)
+            except (OSError, subprocess.SubprocessError, ValueError) as e:
+                return self._json(502, {"error": f"Could not open that page: {e}"})
+            return self._json(200, {"status": status, "url": final, "type": ctype, "html": text})
         if path.startswith("/data/.backups"):
             return self._json(404, {"error": "not found"})
         return super().do_GET()

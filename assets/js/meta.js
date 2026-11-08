@@ -1,4 +1,4 @@
-// Paper metadata: arXiv / Semantic Scholar / Crossref lookups and BibTeX parsing.
+// Paper metadata: arXiv / Semantic Scholar / Crossref lookups, conference pages and BibTeX parsing.
 
 import { lastName, slugify } from './util.js';
 
@@ -33,7 +33,11 @@ const VENUE_NAMES = [
   [/transactions on machine learning research/i, 'TMLR'],
   [/journal of machine learning research/i, 'JMLR'],
   [/conference on robot learning/i, 'CoRL'],
+  [/north american chapter of the association for computational linguistics/i, 'NAACL'],
+  [/european chapter of the association for computational linguistics/i, 'EACL'],
   [/association for computational linguistics/i, 'ACL'],
+  [/international joint conference on artificial intelligence/i, 'IJCAI'],
+  [/aaai conference on artificial intelligence/i, 'AAAI'],
   [/empirical methods in natural language processing/i, 'EMNLP'],
 ];
 
@@ -164,6 +168,80 @@ async function fetchCrossref(doi) {
   };
 }
 
+// -- conference pages (NeurIPS, PMLR, ACL Anthology, CVF, JMLR, IJCAI …) carry the published
+// metadata in Google Scholar's citation_* tags.
+
+// A proceedings PDF → its page, which has the metadata.
+const PDF_TO_PAGE = [
+  [/^(https?:\/\/(?:papers\.nips\.cc|proceedings\.neurips\.cc)\/.*)\/file\/([0-9a-f]+)-Paper(-\w+)?\.pdf$/i, (m) => `${m[1]}/hash/${m[2]}-Abstract${m[3] || ''}.html`],
+  [/^(https?:\/\/proceedings\.mlr\.press\/v\d+)\/([\w-]+)\/\2\.pdf$/i, (m) => `${m[1]}/${m[2]}.html`],
+  [/^(https?:\/\/aclanthology\.org\/[\w.-]+?)\.pdf$/i, (m) => `${m[1]}/`],
+  [/^(https?:\/\/openaccess\.thecvf\.com\/[\w/]+?)\/papers\/([\w-]+)\.pdf$/i, (m) => `${m[1]}/html/${m[2]}.html`],
+  [/^(https?:\/\/(?:www\.)?jmlr\.org\/papers)\/volume(\d+)\/([\w-]+)\/\3\.pdf$/i, (m) => `${m[1]}/v${m[2]}/${m[3]}.html`],
+  [/^(https?:\/\/(?:www\.)?ijcai\.org\/proceedings\/\d{4})\/0*(\d+)\.pdf$/i, (m) => `${m[1]}/${m[2]}`],
+];
+
+const ABSTRACT_SELECTORS = ['.acl-abstract span', '#abstract', '.paper-abstract', '.paper-abstract + p', 'p.abstract', '.article__abstract p:not(.eyebrow)', '.abstract'];
+
+const UNREADABLE = "Couldn't read the paper's details from that page (some sites block apps). Paste its title, DOI or BibTeX instead.";
+
+// Browsers can't read most of these sites (no CORS headers), so the local server (serve.py) fetches them.
+async function fetchPage(url) {
+  let r;
+  try {
+    r = await fetch(`api/page?url=${encodeURIComponent(url)}`);
+  } catch { /* not served by serve.py */ }
+  if (r && /json/.test(r.headers.get('content-type') || '')) {
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || UNREADABLE);
+    return j;
+  }
+  try {
+    const d = await fetch(url);
+    return { status: d.status, url: d.url, type: d.headers.get('content-type') || '', html: await d.text() };
+  } catch {
+    throw new Error('Reading conference pages needs the desktop app (or python3 serve.py). Paste the title, DOI or BibTeX instead.');
+  }
+}
+
+async function fromPage(input) {
+  const url = PDF_TO_PAGE.reduce((u, [re, page]) => (re.test(u) ? page(re.exec(u)) : u), input);
+  const host = new URL(url).hostname.replace(/^www\./, '');
+  if (/(^|\.)openreview\.net$/.test(host)) {
+    throw new Error("OpenReview doesn't let apps read its pages. Copy the paper's BibTeX from OpenReview and paste it here, or paste the title.");
+  }
+  const page = await fetchPage(url);
+  if (/pdf/i.test(page.type)) throw new Error("That's a link to a PDF. Paste the link to the paper's page (the one with the abstract) instead.");
+  const doc = new DOMParser().parseFromString(page.html || '', 'text/html');
+  const meta = (...names) => names.flatMap((n) => [...doc.querySelectorAll(`meta[name="${n}" i], meta[property="${n}" i]`)].map((e) => clean(e.content)).filter(Boolean));
+  const title = meta('citation_title', 'dc.title')[0];
+  const doi = parseDoi(meta('citation_doi', 'dc.identifier')[0] || '');
+  if (!title) {
+    if (doi) return fetchCrossref(doi);
+    throw new Error(UNREADABLE);
+  }
+  const year = +(/\b(?:19|20)\d{2}\b/.exec(meta('citation_publication_date', 'citation_date', 'citation_year', 'citation_online_date')[0] || '') || [])[0] || '';
+  const container = meta('citation_conference_title', 'citation_journal_title', 'citation_inbook_title')[0] || '';
+  let venue = venueFrom(container);
+  if (venue && year && !/\d{4}$/.test(venue)) venue += ` ${year}`;
+  const abstractEl = ABSTRACT_SELECTORS.map((s) => doc.querySelector(s)).find((e) => clean(e?.textContent).length > 40);
+  const abstract = meta('citation_abstract', 'dc.description')[0] || clean(abstractEl?.textContent).replace(/^abstract[:.\s]*/i, '');
+  const pageUrl = page.url || url;
+  const pdf = meta('citation_pdf_url')[0];
+  const links = { arxiv: pageUrl };
+  if (pdf) links.pdf = new URL(pdf, pageUrl).href;
+  if (doi) links.doi = `https://doi.org/${doi}`;
+  return {
+    title,
+    authors: meta('citation_author', 'dc.creator').map(bibAuthor),
+    year,
+    venue: venue || container,
+    abstract,
+    links,
+    source: host,
+  };
+}
+
 async function firstOk(tasks) {
   let last;
   for (const t of tasks) {
@@ -203,7 +281,7 @@ async function resolve(input) {
     if (axFromDoi) return firstOk([() => fetchDatacite(axFromDoi[1]), () => fetchS2(`arXiv:${axFromDoi[1]}`)]);
     return firstOk([() => fetchCrossref(doi), () => fetchS2(`DOI:${doi}`)]);
   }
-  if (/^https?:\/\//.test(s)) throw new Error('Paste an arXiv link, a DOI or the paper title instead of this URL');
+  if (/^https?:\/\//i.test(s)) return fromPage(s);
   return firstOk([() => searchS2(s), () => searchOpenAlex(s)]);
 }
 

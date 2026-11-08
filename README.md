@@ -40,7 +40,7 @@ It is a static site with no build step: plain HTML/CSS/JS plus [KaTeX](https://k
   - a live word count.
 - **Autosave**: everything you type is saved automatically. A new paper is saved once you've filled in its title and left the field.
 - **No duplicates**: a paper with the same arXiv ID, DOI or title as one in your library isn't added. You get a message with a link to the existing paper.
-- **Auto-fill**: paste an arXiv link or ID, a DOI, a BibTeX entry or a title, and the title, authors, venue, year, abstract and links are filled in.
+- **Auto-fill**: paste an arXiv link or ID, a DOI, a BibTeX entry, a title, or the link to the published version (NeurIPS, ICML/PMLR, ACL Anthology, CVF, JMLR, IJCAI and other pages with Google Scholar metadata, or their PDF links), and the title, authors, venue, year, abstract and links are filled in. Conference links need the local server (the desktop app or `python3 serve.py`). OpenReview and some publishers block apps: paste the BibTeX or the title instead.
 - **Reading workflow**: *To read → Reading → Read* status, a 1–5 rating, favourites, tags, an activity heatmap and a "Continue taking notes" row on the home page.
 - **Search** (`/` or `⌘K`) across titles, authors, tags, summaries and notes. `⌘↵` opens a result straight in the notes workspace.
 - **PDF export**: the **PDF** button (on a paper's page or in the notes workspace) typesets a paper's notes like an article: the title, authors and venue, the TL;DR, the abstract, the summary, the notes, and one References list for everything cited. Choose *Save as PDF* in the print dialog.

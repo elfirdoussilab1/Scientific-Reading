@@ -203,7 +203,7 @@ function referenceDialog(query, from, to) {
   ui.refFound = null;
   openDialog(`<form class="dlg" data-form="reference">
     <h2 class="dlg-title">Cite a paper</h2>
-    <p class="dlg-text">Paste an arXiv link or ID, a DOI, a BibTeX entry or the title. It is saved as a reference you can cite from any note, without going on your reading list.</p>
+    <p class="dlg-text">Paste a conference or arXiv link, a DOI, a BibTeX entry or the title. It is saved as a reference you can cite from any note, without going on your reading list.</p>
     <label class="field"><span>Paper</span><textarea name="q" rows="3" required placeholder="https://arxiv.org/abs/1706.03762">${esc(query)}</textarea></label>
     <div class="ref-found" id="ref-found" hidden></div>
     <label class="check"><input type="checkbox" name="toRead"> Also add it to my reading list (To read)</label>
@@ -623,7 +623,7 @@ function viewPaper(id) {
   const bib = p.bibtex || makeBibtex(p);
   const edit = store.canEdit;
   const links = LINKS.filter(([k]) => p.links[k])
-    .map(([k, label, ic]) => `<a class="btn" href="${esc(p.links[k])}" target="_blank" rel="noopener">${icon(ic)}${label}</a>`)
+    .map(([k, label, ic]) => `<a class="btn" href="${esc(p.links[k])}" target="_blank" rel="noopener">${icon(ic)}${k === 'arxiv' && !/arxiv\.org/i.test(p.links[k]) ? 'Paper page' : label}</a>`)
     .join('');
   const tocList = (toc) => (toc.length ? `<ul>${toc.map((t) => `<li class="lv${t.level}"><a data-scroll="${t.id}">${t.num ? `<span class="secnum">${t.num}</span>` : ''}${t.html}</a></li>`).join('')}</ul>` : '');
   const related = lib().papers.filter((q) => q.id !== p.id && q.topics.some((t) => p.topics.includes(t)))
@@ -893,7 +893,7 @@ function viewEditor(id, params) {
       <div class="import-main">
         <p class="import-title">Fill in the details automatically</p>
         <div class="import-row">
-          <input id="import-input" placeholder="Paste an arXiv link or ID, a DOI, a BibTeX entry, or a title…" autocomplete="off" spellcheck="false">
+          <input id="import-input" placeholder="Paste a conference or arXiv link, a DOI, a BibTeX entry, or a title…" autocomplete="off" spellcheck="false">
           <button class="btn" data-action="fetch-meta">${icon('sparkles')}Fetch</button>
         </div>
       </div>
