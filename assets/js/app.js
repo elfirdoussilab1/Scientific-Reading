@@ -18,7 +18,10 @@ const MOD = MAC ? '⌘' : 'Ctrl+';
 
 const TOPIC_COLORS = [
   ['Blue', '#5b8def'], ['Teal', '#2bb3a3'], ['Violet', '#9b7bf0'], ['Rose', '#e86a8a'], ['Green', '#5fbf6a'],
-  ['Sky', '#4cb8e6'], ['Indigo', '#7c7ff2'], ['Pink', '#d46ad0'], ['Lime', '#a3c94a'], ['Grey', '#9aa0a6'],
+  ['Sky', '#4cb8e6'], ['Indigo', '#7c7ff2'], ['Pink', '#d46ad0'], ['Lime', '#a3c94a'], ['Orange', '#f08c4a'],
+  ['Amber', '#e5b030'], ['Red', '#e0574f'], ['Coral', '#f27d6b'], ['Emerald', '#2f9e6e'], ['Cyan', '#1fa9c9'],
+  ['Navy', '#3f5fa8'], ['Purple', '#8a55cf'], ['Magenta', '#c4469b'], ['Brown', '#a8774f'], ['Olive', '#8c9a3a'],
+  ['Slate', '#62808f'], ['Grey', '#9aa0a6'],
 ];
 const NO_TOPIC = '#8b8d94';
 const STATUS = {
@@ -65,7 +68,7 @@ const topicById = (id) => lib().topics.find((t) => t.id === id);
 const paperById = (id) => lib().papers.find((p) => p.id === id);
 // Gradient stops giving each of the paper's topics an equal band of colour.
 const paperStops = (p) => {
-  const colors = p.topics.map(topicById).filter(Boolean).map((t) => t.color);
+  const colors = [...new Set(p.topics.map(topicById).filter(Boolean).map(topicColor))];
   const c = colors.length ? colors : [NO_TOPIC];
   return c.map((col, i) => `${col} ${(i * 100) / c.length}% ${((i + 1) * 100) / c.length}%`).join(',');
 };
@@ -73,6 +76,14 @@ const paperStops = (p) => {
 const parentOf = (t) => (t?.parent ? topicById(t.parent) : null);
 const subtopicsOf = (id) => lib().topics.filter((t) => t.parent === id);
 const rootTopics = () => lib().topics.filter((t) => !parentOf(t));
+// Sub-topics have no colour of their own: they show their parent's.
+const topicColor = (t) => parentOf(t)?.color || t?.color || NO_TOPIC;
+const unusedColor = () => {
+  const used = new Set(rootTopics().map((t) => t.color));
+  return (TOPIC_COLORS.find(([, c]) => !used.has(c)) || TOPIC_COLORS[rootTopics().length % TOPIC_COLORS.length])[1];
+};
+// A topic's dot, or nothing for a sub-topic.
+const topicDot = (t) => (parentOf(t) ? '' : '<span class="tdot"></span>');
 // Top-level topics, each followed by its sub-topics.
 const topicTree = () => rootTopics().flatMap((t) => [t, ...subtopicsOf(t.id)]);
 // A topic's papers include those of its sub-topics.
@@ -340,7 +351,7 @@ function pdfUrl(p) {
 const venueYear = (p) => [p.venue, p.year && !String(p.venue).includes(String(p.year)) ? p.year : ''].filter(Boolean).join(' · ');
 const badge = (s) => `<span class="badge st-${s}">${icon(STATUS[s].icon)}${STATUS[s].label}</span>`;
 const stars = (n) => (n ? `<span class="stars" title="${n} / 5">${'★'.repeat(n)}<span class="off">${'★'.repeat(5 - n)}</span></span>` : '');
-const topicChip = (t) => `<span class="tchip" style="--c:${t.color}"><i></i>${esc(t.name)}</span>`;
+const topicChip = (t) => `<span class="tchip" style="--c:${topicColor(t)}"><i></i>${parentOf(t) ? `${esc(parentOf(t).name)} › ` : ''}${esc(t.name)}</span>`;
 const tagChip = (t) => `<a class="chip" href="${href('tag', t)}">#${esc(t)}</a>`;
 
 function authorsLine(a = []) {
@@ -360,7 +371,7 @@ function sheet(p) {
   const w = words(p.notes) + words(p.summary);
   const b = blurb(p);
   return `<a class="sheet" href="${href('paper', p.id)}" style="--stops:${paperStops(p)}">
-    <div class="sheet-head"><span class="sheet-venue">${esc(venueYear(p)) || '&nbsp;'}</span>${badge(p.status)}</div>
+    <div class="sheet-head"><span class="sheet-venue">${esc(venueYear(p)) || '&nbsp;'}</span><span class="grow"></span>${store.canEdit ? `<button class="icon-btn sm sheet-topics" data-action="paper-topics" data-id="${esc(p.id)}" title="Topics & sub-topics" aria-label="Topics & sub-topics">${icon('folder')}</button>` : ''}${badge(p.status)}</div>
     <h3 class="sheet-title">${inl(p.title)}</h3>
     <p class="sheet-authors">${esc(authorsLine(p.authors))}</p>
     ${b ? `<p class="sheet-abstract">${b}</p>` : '<div class="sheet-lines"><i></i><i></i><i></i></div>'}
@@ -379,7 +390,7 @@ function table(papers) {
         const w = words(p.notes) + words(p.summary);
         return `<tr data-href="${href('paper', p.id)}">
           <td><a class="pt-title" href="${href('paper', p.id)}">${inl(p.title)}</a><div class="pt-authors">${esc(authorsLine(p.authors))}</div></td>
-          <td class="hide-sm">${t ? topicChip(t) : ''}</td>
+          <td class="hide-sm"><div class="pt-topic">${t ? topicChip(t) : ''}${store.canEdit ? `<button class="icon-btn sm sheet-topics" data-action="paper-topics" data-id="${esc(p.id)}" title="Topics & sub-topics" aria-label="Topics & sub-topics">${icon('folder')}</button>` : ''}</div></td>
           <td class="hide-sm muted">${esc(p.venue)}</td><td class="muted num">${esc(p.year || '')}</td>
           <td>${badge(p.status)}</td><td class="hide-sm muted num">${w ? `${fmtWords(w)} w` : '—'}</td>
           <td class="hide-sm muted">${esc(fmtDate(p.added, { month: 'short', day: 'numeric', year: 'numeric' }))}</td></tr>`;
@@ -422,8 +433,8 @@ function renderSidebar() {
     <div class="side-section">
       <div class="side-head"><span>Topics</span>${store.canEdit ? `<button class="icon-btn sm" data-action="new-topic" title="New topic">${icon('plus')}</button>` : ''}</div>
       <nav>${topicTree()
-        .map((t) => `<a href="${href('topic', t.id)}" class="nav-link topic${parentOf(t) ? ' sub' : ''}${r.name === 'topic' && r.id === t.id ? ' active' : ''}" style="--c:${t.color}">
-            <span class="tdot"></span><span class="label">${esc(t.name)}</span><span class="count">${papersIn(t.id).length}</span></a>`)
+        .map((t) => `<a href="${href('topic', t.id)}" class="nav-link topic${parentOf(t) ? ' sub' : ''}${r.name === 'topic' && r.id === t.id ? ' active' : ''}" style="--c:${topicColor(t)}">
+            ${topicDot(t)}<span class="label">${esc(t.name)}</span><span class="count">${papersIn(t.id).length}</span></a>`)
         .join('') || `<p class="side-hint">${store.canEdit ? 'No topics yet. Create one per research area.' : 'No topics yet.'}</p>`}</nav>
     </div>
     ${tags.length ? `<div class="side-section"><div class="side-head"><span>Tags</span></div><div class="side-tags">${tags
@@ -601,11 +612,11 @@ function viewCollection(kind, id) {
     sub = topic.description ? `<p class="lede">${esc(topic.description)}</p>` : '';
     if (!parent) {
       const subs = subtopicsOf(topic.id);
-      const chips = subs.map((s) => `<a class="chip" href="${href('topic', s.id)}" style="--c:${s.color}"><span class="tdot"></span>${esc(s.name)}<span class="n">${papersIn(s.id).length}</span></a>`).join('');
+      const chips = subs.map((s) => `<a class="chip" href="${href('topic', s.id)}">${esc(s.name)}<span class="n">${papersIn(s.id).length}</span></a>`).join('');
       const add = store.canEdit ? `<button class="chip add" data-action="new-subtopic" data-id="${esc(topic.id)}">${icon('plus')}Sub-topic</button>` : '';
       if (chips || add) sub += `<div class="subtopics">${chips}${add}</div>`;
     }
-    color = topic.color;
+    color = topicColor(topic);
   } else if (kind === 'tag') {
     papers = L.papers.filter((p) => p.tags.includes(id));
     title = `#${esc(id)}`;
@@ -656,8 +667,10 @@ function viewPaper(id) {
   return `
   <article class="paper" style="--stops:${paperStops(p)}">
     <nav class="crumbs"><a href="#/">Library</a>${p.topics.map(topicById).filter(Boolean)
+      // A topic already shown as the parent of one of the paper's sub-topics isn't repeated on its own.
+      .filter((t) => !p.topics.some((x) => topicById(x)?.parent === t.id))
       .map((t) => [parentOf(t), t].filter(Boolean)
-        .map((x) => `<span class="sep">/</span><a href="${href('topic', x.id)}" style="--c:${x.color}" class="crumb-topic"><span class="tdot"></span>${esc(x.name)}</a>`).join('')).join('')}</nav>
+        .map((x) => `<span class="sep">/</span><a href="${href('topic', x.id)}" style="--c:${topicColor(x)}" class="crumb-topic">${topicDot(x)}${esc(x.name)}</a>`).join('')).join('')}</nav>
     <header class="paper-head">
       ${venueYear(p) ? `<p class="eyebrow">${esc(venueYear(p))}</p>` : ''}
       <h1 class="paper-title">${inl(p.title)}</h1>
@@ -670,6 +683,7 @@ function viewPaper(id) {
       <div class="paper-links">
         ${edit ? `<a class="btn primary" href="${href('notes', p.id)}">${icon('pen')}Take notes<kbd>W</kbd></a>` : ''}
         ${links}
+        ${edit ? `<button class="btn" data-action="paper-topics" title="Add to topics & sub-topics">${icon('folder')}Topics</button>` : ''}
         <button class="btn" data-action="copy-bib">${icon('quote')}Cite</button>
         <button class="btn" data-action="export-pdf" title="Title, abstract, summary, notes and references, as a PDF">${icon('download')}PDF</button>
         ${edit ? `<a class="btn ghost" href="${href('edit', p.id)}">${icon('edit')}Edit details<kbd>E</kbd></a><button class="icon-btn danger" data-action="delete-paper" title="Delete paper">${icon('trash')}</button>` : ''}
@@ -889,7 +903,7 @@ const renderPreviewSoon = debounce(renderPreview, 150);
 // -- details editor (new paper / edit metadata)
 
 const topicPicker = () =>
-  topicTree().map((t) => `<button class="topic-opt${parentOf(t) ? ' sub' : ''}${ui.draft.topics.includes(t.id) ? ' on' : ''}" style="--c:${t.color}" data-action="draft-topic" data-id="${esc(t.id)}"${parentOf(t) ? ` title="Sub-topic of ${esc(parentOf(t).name)}"` : ''}><span class="tdot"></span>${esc(t.name)}</button>`).join('') +
+  topicTree().map((t) => `<button class="topic-opt${parentOf(t) ? ' sub' : ''}${ui.draft.topics.includes(t.id) ? ' on' : ''}" style="--c:${topicColor(t)}" data-action="draft-topic" data-id="${esc(t.id)}"${parentOf(t) ? ` title="Sub-topic of ${esc(parentOf(t).name)}"` : ''}>${topicDot(t)}${esc(t.name)}</button>`).join('') +
   `<button class="topic-opt add" data-action="new-topic" data-for-draft="1">${icon('plus')}New topic</button>`;
 const statusPicker = () => Object.entries(STATUS).map(([k, s]) => `<button class="seg-btn${ui.draft.status === k ? ' on' : ''}" data-action="draft-status" data-v="${k}">${icon(s.icon)}${s.label}</button>`).join('');
 const ratingPicker = () => [1, 2, 3, 4, 5].map((k) => `<button class="star${k <= ui.draft.rating ? ' on' : ''}" data-action="draft-rating" data-v="${k}">★</button>`).join('');
@@ -1042,34 +1056,49 @@ function confirmDialog(title, text, { ok = 'Delete', danger = true } = {}) {
   });
 }
 
-function topicDialog(topic, forDraft = false, parentId = '') {
-  ui.topicCallback = forDraft ? (id) => { ui.draft?.topics.push(id); draftChanged(); } : null;
+// Put a paper in topics and sub-topics straight from its card or page; each click is saved.
+function paperTopicsDialog(id) {
+  const p = paperById(id);
+  if (!p) return;
+  const opt = (t) => `<button type="button" class="topic-opt${parentOf(t) ? ' sub' : ''}${p.topics.includes(t.id) ? ' on' : ''}" style="--c:${topicColor(t)}"
+    data-action="paper-topic" data-paper="${esc(p.id)}" data-id="${esc(t.id)}">${topicDot(t)}${esc(t.name)}</button>`;
+  const groups = rootTopics().map((t) => `<div class="pt-group">${opt(t)}${subtopicsOf(t.id).map(opt).join('')}
+    <button type="button" class="topic-opt sub add" data-action="paper-new-subtopic" data-paper="${esc(p.id)}" data-id="${esc(t.id)}">${icon('plus')}Sub-topic</button></div>`).join('');
+  openDialog(`<div class="dlg">
+    <h2 class="dlg-title">Topics</h2>
+    <p class="dlg-text">Choose where “${esc(texPlain(p.title))}” belongs. Changes are saved right away.</p>
+    <div class="pt-groups">${groups || '<p class="side-hint">No topics yet.</p>'}</div>
+    <div class="dlg-actions"><button type="button" class="btn ghost" data-action="paper-new-subtopic" data-paper="${esc(p.id)}">${icon('plus')}New topic</button>
+      <span class="grow"></span><button type="button" class="btn primary" data-action="close-dialog">Done</button></div>
+  </div>`);
+}
+
+function topicDialog(topic, forDraft = false, parentId = '', onCreate = null) {
+  ui.topicCallback = onCreate || (forDraft ? (id) => { ui.draft?.topics.push(id); draftChanged(); } : null);
   const parent = topic ? parentOf(topic) : topicById(parentId);
-  const used = new Set(lib().topics.map((t) => t.color));
-  const color = topic?.color || parent?.color || TOPIC_COLORS.find(([, c]) => !used.has(c))?.[1] || TOPIC_COLORS[0][1];
+  const color = (!parent && topic?.color) || unusedColor();
   // Only one level: a topic that has sub-topics can't become a sub-topic itself.
   const canNest = !topic || !subtopicsOf(topic.id).length;
   const parents = rootTopics().filter((t) => t.id !== topic?.id);
   const isSub = !!parent;
   openDialog(`<form class="dlg" data-form="topic" data-id="${esc(topic?.id || '')}">
     <h2 class="dlg-title">${topic ? `Edit ${isSub ? 'sub-topic' : 'topic'}` : isSub ? 'New sub-topic' : 'New topic'}</h2>
-    <p class="dlg-text">Topics group the papers of one research area, and sub-topics split a topic further. A paper can belong to several.</p>
+    <p class="dlg-text">Topics group the papers of one research area, and sub-topics split a topic further. A paper can belong to several. Sub-topics use their topic's colour.</p>
     <label class="field"><span>Name</span><input name="name" required maxlength="60" value="${esc(topic?.name || '')}" placeholder="${isSub ? 'e.g. Score-based models' : 'e.g. Diffusion Models'}"></label>
     ${canNest && parents.length ? `<label class="field"><span>Inside <em>optional</em></span><select name="parent">
       <option value="">None (top-level topic)</option>
       ${parents.map((t) => `<option value="${esc(t.id)}"${t.id === parent?.id ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : ''}
     <label class="field"><span>Description <em>optional</em></span><input name="description" maxlength="140" value="${esc(topic?.description || '')}" placeholder="Score-based & denoising generative models"></label>
-    <div class="field"><span>Colour</span><div class="swatches">${TOPIC_COLORS.map(([n, c]) => `<label class="swatch" title="${n}" style="--c:${c}"><input type="radio" name="color" value="${c}"${c === color ? ' checked' : ''}><span></span></label>`).join('')}</div></div>
+    <div class="field" data-colour-field${isSub ? ' hidden' : ''}><span>Colour</span><div class="swatches">${TOPIC_COLORS.map(([n, c]) => `<label class="swatch" title="${n}" style="--c:${c}"><input type="radio" name="color" value="${c}"${c === color ? ' checked' : ''}><span></span></label>`).join('')}</div></div>
     <div class="dlg-actions">${topic ? `<button type="button" class="btn ghost danger" data-action="delete-topic" data-id="${esc(topic.id)}">${icon('trash')}Delete</button>` : ''}
       <span class="grow"></span><button type="button" class="btn ghost" data-action="close-dialog">Cancel</button><button class="btn primary">${topic ? 'Save' : 'Create'}</button></div>
   </form>`);
 }
 
 function createTopic(name, description = '', color, parent = '') {
-  const used = new Set(lib().topics.map((t) => t.color));
   const id = uniqueId(slugify(name, 40), new Set(lib().topics.map((t) => t.id)));
-  const c = color || TOPIC_COLORS.find(([, v]) => !used.has(v))?.[1] || TOPIC_COLORS[lib().topics.length % TOPIC_COLORS.length][1];
-  store.update((l) => l.topics.push({ id, name, description, color: c, ...(parent ? { parent } : {}) }), `Add topic "${name}"`);
+  const extra = parent ? { parent } : { color: color || unusedColor() };
+  store.update((l) => l.topics.push({ id, name, description, ...extra }), `Add topic "${name}"`);
   return id;
 }
 
@@ -1237,7 +1266,7 @@ function renderResults(q) {
     html += '<p class="pal-group">Topics</p>';
     html += topics.slice(0, 6).map((t) => {
       palItems.push(href('topic', t.id));
-      return `<a class="pal-item" href="${href('topic', t.id)}" style="--c:${t.color}"><span class="tdot"></span><span class="pal-text"><span class="pal-title">${mark(t.name)}</span><span class="pal-meta">${parentOf(t) ? `${esc(parentOf(t).name)} · ` : ''}${papersIn(t.id).length} papers</span></span></a>`;
+      return `<a class="pal-item" href="${href('topic', t.id)}" style="--c:${topicColor(t)}">${topicDot(t) || '<span class="tdot sub"></span>'}<span class="pal-text"><span class="pal-title">${mark(t.name)}</span><span class="pal-meta">${parentOf(t) ? `${esc(parentOf(t).name)} · ` : ''}${papersIn(t.id).length} papers</span></span></a>`;
     }).join('');
   }
   if (store.canEdit) {
@@ -1385,6 +1414,23 @@ const actions = {
   },
   'new-topic': (el) => topicDialog(null, !!el.dataset.forDraft),
   'new-subtopic': (el) => topicDialog(null, false, el.dataset.id),
+  'paper-topics': (el) => paperTopicsDialog(el.dataset.id || ui.route.id),
+  'paper-topic': (el) => {
+    const { paper, id } = el.dataset;
+    const t = topicById(id);
+    updatePaper(paper, (p) => {
+      p.topics = p.topics.includes(id) ? p.topics.filter((x) => x !== id) : [...p.topics, id];
+    }, `Update topics of "${texPlain(paperById(paper).title).slice(0, 50)}" (${t?.name})`);
+    paperTopicsDialog(paper);
+  },
+  // Create a topic (or a sub-topic of data-id), put the paper in it, and come back to the paper's topics.
+  'paper-new-subtopic': (el) => {
+    const { paper, id } = el.dataset;
+    topicDialog(null, false, id || '', (newId) => {
+      updatePaper(paper, (p) => { if (!p.topics.includes(newId)) p.topics.push(newId); }, 'Add paper to new topic');
+      setTimeout(() => paperTopicsDialog(paper)); // after the topic form closes
+    });
+  },
   'edit-topic': (el) => topicDialog(topicById(el.dataset.id)),
   'quick-topic': (el) => { createTopic(el.dataset.name); toast(`Topic “${el.dataset.name}” added`, 'ok'); },
   'delete-topic': async (el) => {
@@ -1550,6 +1596,10 @@ function bindEvents() {
       ui.sort = t.value;
       pref.set('sort', ui.sort);
       renderView({ keepScroll: true });
+    } else if (t.matches('form[data-form="topic"] select[name="parent"]')) {
+      // Sub-topics take their topic's colour, so the colour choice only applies to top-level topics.
+      const field = $('[data-colour-field]', t.form);
+      if (field) field.hidden = !!t.value;
     } else if (t.dataset.apply === 'pdf' && ui.draft) {
       saveDraftNow();
       renderView();
@@ -1621,9 +1671,8 @@ function bindEvents() {
       const parent = 'parent' in data ? data.parent : topicById(f.dataset.id)?.parent || '';
       if (f.dataset.id) {
         store.update((l) => {
-          const t = Object.assign(l.topics.find((x) => x.id === f.dataset.id), { name, description: data.description.trim(), color: data.color });
-          if (parent) t.parent = parent;
-          else delete t.parent;
+          const t = Object.assign(l.topics.find((x) => x.id === f.dataset.id), { name, description: data.description.trim() });
+          if (parent) { t.parent = parent; delete t.color; } else { delete t.parent; t.color = data.color || t.color || unusedColor(); }
         }, `Edit topic "${name}"`);
       } else {
         const id = createTopic(name, data.description.trim(), data.color, parent);

@@ -64,6 +64,7 @@ export function normalize(lib) {
     const parent = tops.get(t.parent);
     if (t.parent !== undefined && (!parent || parent === t || parent.parent)) delete t.parent;
   }
+  for (const t of lib.topics) if (t.parent) delete t.color; // sub-topics show their parent's colour
   lib.papers = Array.isArray(lib.papers) ? lib.papers : [];
   lib.references = Array.isArray(lib.references) ? lib.references : []; // cited papers that are not on the reading list
   for (const p of lib.papers) {
