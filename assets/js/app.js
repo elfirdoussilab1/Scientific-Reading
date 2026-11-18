@@ -367,11 +367,23 @@ function blurb(p) {
 }
 
 function sheet(p) {
-  const t = topicById(p.topics[0]);
+  const topics = p.topics.map(topicById).filter(Boolean);
+  // The footer shows the paper's (first) topic; its sub-topics go at the top, next to the status.
+  const t = topics[0] && (parentOf(topics[0]) || topics[0]);
+  const subs = topics.filter(parentOf);
+  const subTitle = esc(subs.map((s) => `${parentOf(s).name} › ${s.name}`).join('\n'));
+  const subInner = subs.length ? `<span class="sheet-sub-name">${esc(subs[0].name)}</span>${subs.length > 1 ? `<span class="more">+${subs.length - 1}</span>` : ''}` : '';
+  // The sub-topic label doubles as the "Topics" button; without one, a folder icon shows on hover.
+  const topicsBtn = !store.canEdit
+    ? (subs.length ? `<span class="sheet-sub" title="${subTitle}">${subInner}</span>` : '')
+    : subs.length
+      ? `<button class="sheet-sub" data-action="paper-topics" data-id="${esc(p.id)}" title="${subTitle}
+Click to change topics">${subInner}</button>`
+      : `<button class="icon-btn sm sheet-topics" data-action="paper-topics" data-id="${esc(p.id)}" title="Topics & sub-topics" aria-label="Topics & sub-topics">${icon('folder')}</button>`;
   const w = words(p.notes) + words(p.summary);
   const b = blurb(p);
   return `<a class="sheet" href="${href('paper', p.id)}" style="--stops:${paperStops(p)}">
-    <div class="sheet-head"><span class="sheet-venue">${esc(venueYear(p)) || '&nbsp;'}</span><span class="grow"></span>${store.canEdit ? `<button class="icon-btn sm sheet-topics" data-action="paper-topics" data-id="${esc(p.id)}" title="Topics & sub-topics" aria-label="Topics & sub-topics">${icon('folder')}</button>` : ''}${badge(p.status)}</div>
+    <div class="sheet-head"><span class="sheet-venue">${esc(venueYear(p)) || '&nbsp;'}</span><span class="grow"></span>${topicsBtn}${badge(p.status)}</div>
     <h3 class="sheet-title">${inl(p.title)}</h3>
     <p class="sheet-authors">${esc(authorsLine(p.authors))}</p>
     ${b ? `<p class="sheet-abstract">${b}</p>` : '<div class="sheet-lines"><i></i><i></i><i></i></div>'}
