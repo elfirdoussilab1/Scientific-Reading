@@ -13,6 +13,7 @@ No build step, no dependencies: plain HTML/CSS/JS with [KaTeX](https://katex.org
 - **Auto-fill**: paste an arXiv link, DOI, BibTeX entry, title or conference page (NeurIPS, PMLR, ACL, CVF, …) and the paper's details are filled in.
 - **Notes workspace**: the PDF on one side, a LaTeX editor with autocomplete and live preview on the other.
 - **LaTeX notes**: numbered equations, theorems, tables, algorithms, footnotes, cross-references and citations of other papers.
+- **Topics and sub-topics**: group papers by research area, and split a topic into sub-topics (e.g. *Reinforcement Learning → Policy Gradient*).
 - **Reading workflow**: statuses (*To read → Reading → Read*), ratings, favourites, tags, and grouping by year or date added.
 - **Search** across titles, authors, tags and notes.
 - **Export** notes as a typeset PDF, and the library as JSON or BibTeX.

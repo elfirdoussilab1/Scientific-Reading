@@ -58,6 +58,12 @@ export function normalize(lib) {
   lib.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(lib.settings || {}) };
   lib.settings.github = { ...DEFAULT_SETTINGS.github, ...(lib.settings.github || {}) };
   lib.topics = Array.isArray(lib.topics) ? lib.topics : [];
+  // Sub-topics are one level deep: drop a parent that is missing, itself, or a sub-topic.
+  const tops = new Map(lib.topics.map((t) => [t.id, t]));
+  for (const t of lib.topics) {
+    const parent = tops.get(t.parent);
+    if (t.parent !== undefined && (!parent || parent === t || parent.parent)) delete t.parent;
+  }
   lib.papers = Array.isArray(lib.papers) ? lib.papers : [];
   lib.references = Array.isArray(lib.references) ? lib.references : []; // cited papers that are not on the reading list
   for (const p of lib.papers) {
